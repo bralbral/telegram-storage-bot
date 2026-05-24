@@ -15,6 +15,7 @@ from src.handlers.admin import create_admin_handlers
 from src.health import HealthServer
 from src.middlewares.access import AccessMiddleware
 from src.middlewares.throttle import ThrottleMiddleware
+from src.task_manager import TaskManager
 from src.utils.variables import DOWNLOAD_DIR
 
 
