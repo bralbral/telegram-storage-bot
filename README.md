@@ -70,7 +70,6 @@ docker run -d \
 
 - **Send files** → saved as gzip with original filename preserved inside
 - **Send `docker pull <image>`** → downloads and saves Docker image as gz
-- **Send Docker links** → saved to docker_images.txt
 
 ## Commands
 

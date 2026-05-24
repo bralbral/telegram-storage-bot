@@ -9,7 +9,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import aiofiles
 import docker
 from aiogram import F
 from aiogram.types import Message
@@ -67,18 +66,19 @@ def register_text_handlers(dp: Any, download_dir: Path) -> None:
                 await message.reply("❌ Failed to save image")
                 return
 
-            # Compress to gz
+            # Compress to gz using gzip.compress
             logger.info("Compressing tar file to gzip")
-            with open(tar_filepath, "rb") as f:
-                tar_bytes = f.read()
-
             gz_filename = f"{tar_filename}.gz"
             gz_filepath: Path = download_dir / gz_filename
 
-            with open(gz_filepath, "wb") as f:  # type: ignore
-                gzip_file = gzip.GzipFile(fileobj=f, mode="wb", filename=tar_filename)
-                gzip_file.write(tar_bytes)
-                gzip_file.close()
+            def compress_tar():
+                with open(tar_filepath, "rb") as f_in:
+                    tar_bytes = f_in.read()
+                compressed = gzip.compress(tar_bytes)
+                with open(gz_filepath, "wb") as f_out:
+                    f_out.write(compressed)
+
+            await asyncio.to_thread(compress_tar)
 
             # Clean up original tar file
             tar_filepath.unlink()
@@ -149,42 +149,6 @@ def register_text_handlers(dp: Any, download_dir: Path) -> None:
                 )
             )
         else:
-            # Check for docker links (registry URLs)
-            docker_patterns = [
-                "docker.io",
-                "ghcr.io",
-                "gcr.io",
-                "quay.io",
-                ".dkr.ecr.",
-                "registry.gitlab.com",
-            ]
-
-            is_docker_link = any(p in text.lower() for p in docker_patterns)
-
-            if is_docker_link:
-                is_admin = user_data[1] if len(user_data) > 1 else False
-                if not has_prefix and not is_admin:
-                    await message.answer("❌ Set your prefix first with /set_prefix")
-                    return
-
-                prefix = user_data[0] or ""
-                docker_file = download_dir / "docker_images.txt"
-
-                try:
-                    async with aiofiles.open(docker_file, "a") as f:
-                        await f.write(f"{prefix}_{text}\n")
-                    await message.answer(f"🐳 Docker link saved: {text[:50]}...")
-                    logger.info(
-                        f"Docker link saved by user {message.from_user.id}: {text[:50]}"
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Failed to save docker link for user {message.from_user.id}: {e}"
-                    )
-                    await message.answer("❌ Failed to save docker link")
-            else:
-                await message.answer(
-                    "📄 Please send a file, docker pull command, or Docker link."
-                )
+            await message.answer("� Please send a file or docker pull command.")
 
     dp.message.register(handle_text, F.text)
