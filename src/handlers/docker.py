@@ -5,6 +5,7 @@ import gzip
 import logging
 import re
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -13,10 +14,54 @@ import docker
 from aiogram import F
 from aiogram.types import Message
 
+from src.task_manager import TaskManager
+
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+
+async def retry_with_backoff(
+    func: Callable,
+    max_retries: int = 3,
+    initial_delay: float = 1.0,
+    backoff_factor: float = 2.0,
+) -> Any:
+    """Execute function with exponential backoff retry.
+
+    Args:
+        func: Function to execute (should be awaitable or sync)
+        max_retries: Maximum number of retry attempts
+        initial_delay: Initial delay in seconds
+        backoff_factor: Multiplier for delay after each retry
+
+    Returns:
+        Result of function execution
+
+    Raises:
+        Last exception if all retries fail
+    """
+    last_exception = None
+
+    for attempt in range(max_retries):
+        try:
+            if asyncio.iscoroutinefunction(func):
+                return await func()
+            else:
+                return func()
+        except Exception as e:
+            last_exception = e
+            if attempt < max_retries - 1:
+                delay = initial_delay * (backoff_factor**attempt)
+                logger.warning(
+                    f"Attempt {attempt + 1}/{max_retries} failed: {e}. "
+                    f"Retrying in {delay:.1f}s..."
+                )
+                await asyncio.sleep(delay)
+            else:
+                logger.error(f"All {max_retries} attempts failed")
+                raise last_exception from None
 
 
 def register_text_handlers(dp: Any, download_dir: Path) -> None:
@@ -39,9 +84,13 @@ def register_text_handlers(dp: Any, download_dir: Path) -> None:
             # Connect to Docker daemon
             client = docker.from_env()
 
-            # Pull image
+            # Pull image with retry
             logger.info(f"Pulling Docker image: {image_name}")
-            await asyncio.to_thread(client.images.pull, image_name)
+
+            async def pull_with_retry():
+                return await asyncio.to_thread(client.images.pull, image_name)
+
+            await retry_with_backoff(pull_with_retry, max_retries=3)
             logger.info(f"Image pulled successfully: {image_name}")
 
             # Generate filename
@@ -52,11 +101,16 @@ def register_text_handlers(dp: Any, download_dir: Path) -> None:
             tar_filename = f"{prefix}_{safe_image_name}_{timestamp}_{uuid_part}.tar"
             tar_filepath = download_dir / tar_filename
 
-            # Save image as tar
+            # Save image as tar with retry
             logger.info(f"Saving image to tar: {tar_filepath}")
-            await asyncio.to_thread(
-                save_with_dir_check, client, image_name, tar_filepath, download_dir
-            )
+
+            async def save_with_retry():
+                await asyncio.to_thread(
+                    save_with_dir_check, client, image_name, tar_filepath, download_dir
+                )
+
+            await retry_with_backoff(save_with_retry, max_retries=2)
+            logger.info(f"Image saved to tar: {tar_filepath}")
 
             # Verify tar file exists
             if not tar_filepath.exists():
@@ -82,13 +136,19 @@ def register_text_handlers(dp: Any, download_dir: Path) -> None:
             tar_filepath.unlink()
             logger.info("Original tar file deleted")
 
-            # Remove Docker image to save space
+            # Remove Docker image to save space with retry
             logger.info(f"Removing Docker image: {image_name}")
-            try:
+
+            async def remove_with_retry():
                 await asyncio.to_thread(client.images.remove, image_name, force=True)
+
+            try:
+                await retry_with_backoff(remove_with_retry, max_retries=2)
                 logger.info(f"Image removed successfully: {image_name}")
             except Exception as e:
-                logger.warning(f"Failed to remove image {image_name}: {e}")
+                logger.warning(
+                    f"Failed to remove image {image_name} after retries: {e}"
+                )
 
             await message.reply(f"✅ Docker image saved: {gz_filename}")
             logger.info(f"Docker image saved by user {user_id}: {gz_filename}")
@@ -118,6 +178,7 @@ def register_text_handlers(dp: Any, download_dir: Path) -> None:
         message: Message,
         user_data: tuple[str, ...],
         has_prefix: bool,
+        task_manager: TaskManager,
     ) -> None:
         """Handle text messages - detect docker pull commands."""
         text = message.text.strip()
@@ -140,13 +201,16 @@ def register_text_handlers(dp: Any, download_dir: Path) -> None:
                 await message.answer("❌ Invalid Docker image name")
                 return
 
-            # Process in background
-            asyncio.create_task(
-                process_docker_pull(
+            # Process in background with task queue
+            await task_manager.add_task(
+                user_id=message.from_user.id,
+                task_func=process_docker_pull(
                     message, image_name, prefix, message.from_user.id, download_dir
-                )
+                ),
+                message=message,
+                task_type="Docker image download",
             )
         else:
-            await message.answer("� Please send a file or docker pull command.")
+            await message.answer("❓ Please send a file or docker pull command.")
 
     dp.message.register(handle_text, F.text)

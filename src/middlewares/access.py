@@ -7,6 +7,7 @@ from aiogram.dispatcher.middlewares.base import BaseMiddleware
 from aiogram.types import Message
 
 from src.db.database import Database
+from src.task_manager import TaskManager
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -17,11 +18,19 @@ logger = logging.getLogger(__name__)
 class AccessMiddleware(BaseMiddleware):
     """Middleware that checks user access - admins from config have automatic access."""
 
-    __slots__ = ("db", "admin_ids")
+    __slots__ = ("db", "task_manager", "admin_ids", "download_dir")
 
-    def __init__(self, db: Database, admin_ids: list[int] | None = None):
+    def __init__(
+        self,
+        db: Database,
+        admin_ids: list[int] | None = None,
+        task_manager: TaskManager | None = None,
+        download_dir: Path | None = None,
+    ):
         self.db = db
+        self.task_manager = task_manager
         self.admin_ids = admin_ids or []
+        self.download_dir = download_dir
 
     async def __call__(
         self,
@@ -54,6 +63,9 @@ class AccessMiddleware(BaseMiddleware):
             data["user_data"] = (prefix, is_admin)
             data["has_prefix"] = bool(prefix)
             data["is_admin"] = is_admin
+            data["db"] = self.db
+            data["task_manager"] = self.task_manager
+            data["download_dir"] = self.download_dir
 
             has_file = any(
                 [

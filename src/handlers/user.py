@@ -9,19 +9,34 @@ from aiogram.types import (
     Message,
 )
 
-from src.db.database import db
+from src.db.database import Database
+from src.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 
 
 def is_valid_prefix(prefix: str) -> bool:
-    """Validate prefix: only latin alphanumeric characters, max 5 chars."""
+    """Validate prefix: only latin alphanumeric characters and underscore, 1-10 chars."""
     return (
-        bool(prefix) and len(prefix) <= 5 and bool(re.match(r"^[a-zA-Z0-9_]+$", prefix))
+        bool(prefix)
+        and 1 <= len(prefix) <= 10
+        and bool(re.match(r"^[a-zA-Z0-9_]+$", prefix))
     )
 
 
-async def cmd_start(message: Message, user_data: tuple):
+def validate_prefix(prefix: str) -> None:
+    """Validate prefix and raise ValidationError if invalid."""
+    if not prefix:
+        raise ValidationError("Prefix cannot be empty")
+    if not (1 <= len(prefix) <= 10):
+        raise ValidationError("Prefix must be 1-10 characters long")
+    if not re.match(r"^[a-zA-Z0-9_]+$", prefix):
+        raise ValidationError(
+            "Prefix must contain only latin letters, numbers, and underscores"
+        )
+
+
+async def cmd_start(message: Message, user_data: tuple) -> None:
     """Handle /start command - show greeting with current prefix."""
     prefix = user_data[0] or ""
     try:
@@ -38,19 +53,21 @@ async def cmd_start(message: Message, user_data: tuple):
         raise
 
 
-async def cmd_set_prefix(message: Message, command: CommandObject, user_data: tuple):
-    """Handle /set_prefix command - set user's file prefix (max 5 latin chars)."""
+async def cmd_set_prefix(
+    message: Message, command: CommandObject, user_data: tuple, db: Database
+) -> None:
+    """Handle /set_prefix command - set user's file prefix (1-10 latin chars)."""
     if not command.args:
         await message.answer(
-            "Usage: /set_prefix <prefix> (max 5 latin alphanumeric characters)"
+            "Usage: /set_prefix <prefix> (1-10 latin alphanumeric characters)"
         )
         return
 
     prefix = command.args.strip()
-    if not is_valid_prefix(prefix):
-        await message.answer(
-            "❌ Prefix must be 1-5 latin alphanumeric characters (a-z, A-Z, 0-9, _)."
-        )
+    try:
+        validate_prefix(prefix)
+    except ValidationError as e:
+        await message.answer(f"❌ {e}")
         return
 
     try:
@@ -62,20 +79,20 @@ async def cmd_set_prefix(message: Message, command: CommandObject, user_data: tu
         await message.answer("❌ Failed to set prefix. Please try again.")
 
 
-async def set_commands(bot, admin_ids: list[int] | None = None):
+async def set_commands(bot, admin_ids: list[int] | None = None) -> None:
     """Set bot commands menu based on user role."""
     admin_ids = admin_ids or []
 
     # Basic commands for all users
     basic_commands = [
         BotCommand(command="start", description="Start the bot"),
-        BotCommand(command="set_prefix", description="Set file prefix (5 chars)"),
+        BotCommand(command="set_prefix", description="Set file prefix (1-10 chars)"),
     ]
 
     # Admin commands (only for admins)
     admin_commands = [
         BotCommand(command="start", description="Start the bot"),
-        BotCommand(command="set_prefix", description="Set file prefix (5 chars)"),
+        BotCommand(command="set_prefix", description="Set file prefix (1-10 chars)"),
         BotCommand(command="add_user", description="Add user"),
         BotCommand(command="remove_user", description="Remove user"),
         BotCommand(command="list_users", description="List all users"),

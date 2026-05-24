@@ -51,6 +51,53 @@ async def save_file_gzip(
         raise
 
 
+async def save_file_gzip_streaming(
+    source_path: Path,
+    prefix: str,
+    download_dir: Path,
+    original_filename: str = "",
+) -> str:
+    """Compress file with streaming to avoid loading entire file into memory.
+
+    Reads file in chunks (1MB) and compresses on-the-fly to avoid OOM.
+
+    Args:
+        source_path: Path to the source file
+        prefix: User-defined prefix for the archive filename
+        download_dir: Directory to save the compressed file
+        original_filename: Original filename to preserve inside gzip
+
+    Returns:
+        The filename of the saved compressed file
+
+    Raises:
+        OSError: If file writing fails
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    uuid_part = uuid.uuid4().hex[:8]
+
+    # Archive filename with prefix
+    filename = f"{prefix}_{timestamp}_{uuid_part}.gz"
+    filepath = download_dir / filename
+
+    chunk_size = 1024 * 1024  # 1MB chunks
+
+    try:
+        with open(source_path, "rb") as f_in:
+            with open(filepath, "wb") as f_out:
+                with gzip.open(f_out, "wb") as gzip_file:
+                    while True:
+                        chunk = f_in.read(chunk_size)
+                        if not chunk:
+                            break
+                        gzip_file.write(chunk)
+        logger.info(f"File saved: {filename} (inside: {original_filename})")
+        return filename
+    except OSError as e:
+        logger.error(f"Failed to save file {filename}: {e}")
+        raise
+
+
 async def save_file_direct(
     file_content: bytes,
     prefix: str,
@@ -90,6 +137,59 @@ async def save_file_direct(
     try:
         with open(filepath, "wb") as f:
             f.write(file_content)
+        logger.info(f"File saved: {filename} (original: {original_filename})")
+        return filename
+    except OSError as e:
+        logger.error(f"Failed to save file {filename}: {e}")
+        raise
+
+
+async def save_file_direct_streaming(
+    source_path: Path,
+    prefix: str,
+    download_dir: Path,
+    original_filename: str = "",
+) -> str:
+    """Save file directly without compression using streaming.
+
+    Args:
+        source_path: Path to the source file
+        prefix: User-defined prefix for the filename
+        download_dir: Directory to save the file
+        original_filename: Original filename to use as base
+
+    Returns:
+        The filename of the saved file
+
+    Raises:
+        OSError: If file writing fails
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    uuid_part = uuid.uuid4().hex[:8]
+
+    # Use original filename extension if available
+    if original_filename:
+        # Extract extension from original filename
+        if "." in original_filename:
+            ext = original_filename.rsplit(".", 1)[-1]
+            filename = f"{prefix}_{timestamp}_{uuid_part}.{ext}"
+        else:
+            filename = f"{prefix}_{timestamp}_{uuid_part}"
+    else:
+        filename = f"{prefix}_{timestamp}_{uuid_part}"
+
+    filepath = download_dir / filename
+
+    try:
+        # Copy file in chunks to avoid loading entire file into memory
+        chunk_size = 1024 * 1024  # 1MB chunks
+        with open(source_path, "rb") as f_in:
+            with open(filepath, "wb") as f_out:
+                while True:
+                    chunk = f_in.read(chunk_size)
+                    if not chunk:
+                        break
+                    f_out.write(chunk)
         logger.info(f"File saved: {filename} (original: {original_filename})")
         return filename
     except OSError as e:

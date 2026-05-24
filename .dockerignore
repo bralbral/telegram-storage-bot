@@ -12,6 +12,8 @@ __pycache__
 .idea
 downloads
 users.db
+users.db-shm
+users.db-wal
 config.yaml
 .env.example
 .mypy_cache

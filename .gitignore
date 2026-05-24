@@ -5,6 +5,8 @@ __pycache__/
 .env.local
 config.yaml
 users.db
+users.db-shm
+users.db-wal
 venv/
 .venv/
 .mypy_cache/
