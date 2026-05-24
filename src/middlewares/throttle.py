@@ -1,20 +1,33 @@
+from __future__ import annotations
+
 import time
 from collections import defaultdict
+from typing import TYPE_CHECKING, Any, Callable
 
 from aiogram.dispatcher.middlewares.base import BaseMiddleware
 from aiogram.types import Message
 
 from utils.variables import THROTTLE_RATE
 
+if TYPE_CHECKING:
+    from collections.abc import Awaitable
+
 
 class ThrottleMiddleware(BaseMiddleware):
     """Middleware that limits users to 1 action per THROTTLE_RATE seconds."""
 
-    def __init__(self, rate: float = None):
-        self.rate = rate or THROTTLE_RATE
-        self.user_timestamps = defaultdict(list)
+    __slots__ = ("rate", "user_timestamps")
 
-    async def __call__(self, handler, event: Message, data: dict):
+    def __init__(self, rate: float | None = None):
+        self.rate = rate or THROTTLE_RATE
+        self.user_timestamps: dict[int, list[float]] = defaultdict(list)
+
+    async def __call__(
+        self,
+        handler: Callable[[Message, dict[str, Any]], Awaitable[Any]],
+        event: Message,
+        data: dict[str, Any],
+    ) -> Any:
         """Enforce rate limiting per user."""
         user_id = event.from_user.id
         current_time = time.time()

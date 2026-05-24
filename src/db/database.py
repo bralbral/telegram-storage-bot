@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import aiosqlite
 
 from utils.variables import DB_PATH
@@ -6,66 +8,64 @@ from utils.variables import DB_PATH
 class Database:
     """SQLite database manager for user storage."""
 
-    def __init__(self, path: str = DB_PATH):
+    __slots__ = ("path",)
+
+    def __init__(self, path: str | Path = DB_PATH):
         self.path = str(path)
 
-    async def init(self):
+    async def init(self) -> None:
         """Create users table if it doesn't exist."""
         async with aiosqlite.connect(self.path) as db:
-            await db.execute('''
+            await db.execute(
+                """
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     telegram_id INTEGER UNIQUE NOT NULL,
                     prefix TEXT
                 )
-            ''')
+                """
+            )
             await db.commit()
 
-    async def get_user(self, telegram_id: int):
+    async def get_user(self, telegram_id: int) -> str | None:
         """Get user by telegram_id, returns prefix string or None."""
         async with aiosqlite.connect(self.path) as db:
             cursor = await db.execute(
                 "SELECT prefix FROM users WHERE telegram_id = ?",
-                (telegram_id,)
+                (telegram_id,),
             )
             result = await cursor.fetchone()
             return result[0] if result else None
 
-    async def add_user(self, telegram_id: int, prefix: str = ""):
+    async def add_user(self, telegram_id: int, prefix: str = "") -> None:
         """Add a user to the database."""
         async with aiosqlite.connect(self.path) as db:
             await db.execute(
                 "INSERT OR IGNORE INTO users (telegram_id, prefix) VALUES (?, ?)",
-                (telegram_id, prefix)
+                (telegram_id, prefix),
             )
             await db.commit()
 
-    async def set_prefix(self, telegram_id: int, prefix: str):
+    async def set_prefix(self, telegram_id: int, prefix: str) -> None:
         """Update user's prefix."""
         async with aiosqlite.connect(self.path) as db:
             await db.execute(
                 "UPDATE users SET prefix = ? WHERE telegram_id = ?",
-                (prefix, telegram_id)
+                (prefix, telegram_id),
             )
             await db.commit()
 
-    async def remove_user(self, telegram_id: int):
+    async def remove_user(self, telegram_id: int) -> None:
         """Remove user from the database."""
         async with aiosqlite.connect(self.path) as db:
             await db.execute("DELETE FROM users WHERE telegram_id = ?", (telegram_id,))
             await db.commit()
 
-    async def get_all_users(self):
+    async def get_all_users(self) -> list[tuple[int, str | None]]:
         """Get all users from database, returns list of (telegram_id, prefix)."""
         async with aiosqlite.connect(self.path) as db:
-            cursor = await db.execute(
-                "SELECT telegram_id, prefix FROM users"
-            )
+            cursor = await db.execute("SELECT telegram_id, prefix FROM users")
             return await cursor.fetchall()
-
-    async def has_access(self, telegram_id: int) -> bool:
-        """Check if user exists in database."""
-        return await self.get_user(telegram_id) is not None
 
 
 db = Database()

@@ -1,13 +1,23 @@
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from db.database import db
 
 
-def create_admin_handlers(admin_ids: list):
+def create_admin_handlers(
+    admin_ids: list[int],
+) -> tuple[
+    Callable[[Message, CommandObject], Awaitable[None]],
+    Callable[[Message, CommandObject], Awaitable[None]],
+    Callable[[Message], Awaitable[None]],
+]:
     """Create admin command handlers with admin_ids bound via closure."""
 
-    async def cmd_add_user(message: Message, command: CommandObject):
+    async def cmd_add_user(message: Message, command: CommandObject) -> None:
         """Admin only: Add a user to the database with optional prefix."""
         if message.from_user.id not in admin_ids:
             return
@@ -22,7 +32,7 @@ def create_admin_handlers(admin_ids: list):
         await db.add_user(telegram_id, prefix)
         await message.answer(f"✅ User {telegram_id} added. Prefix: `{prefix or 'none'}`")
 
-    async def cmd_remove_user(message: Message, command: CommandObject):
+    async def cmd_remove_user(message: Message, command: CommandObject) -> None:
         """Admin only: Remove a user from the database."""
         if message.from_user.id not in admin_ids:
             return
@@ -34,7 +44,7 @@ def create_admin_handlers(admin_ids: list):
         await db.remove_user(telegram_id)
         await message.answer(f"✅ User {telegram_id} removed.")
 
-    async def cmd_list_users(message: Message):
+    async def cmd_list_users(message: Message) -> None:
         """Admin only: List all users with their prefixes."""
         if message.from_user.id not in admin_ids:
             return
