@@ -8,6 +8,7 @@ Telegram bot for saving files and Docker images to disk with gzip compression.
 ├── .env.example          # Environment variables example
 ├── requirements.txt      # Python dependencies
 ├── Dockerfile           # Docker image
+├── docker-compose.yml   # Docker Compose configuration
 ├── src/
 │   ├── __main__.py      # Entry point
 │   ├── handlers/        # Command handlers
@@ -39,6 +40,16 @@ python -m src
 
 ### Docker
 
+#### Using Docker Compose (Recommended)
+
+```bash
+cp .env.example .env
+# Edit .env with your values
+docker compose up -d
+```
+
+#### Using Docker CLI
+
 ```bash
 docker build -t storage-bot .
 docker run -d \
@@ -68,7 +79,8 @@ docker run -d \
 
 ## Usage
 
-- **Send files** → saved as gzip with original filename preserved inside
+- **Send files** → saved as gzip with original filename preserved inside (max 2GB)
+  - Already compressed files (.gz, .zip, .rar, .7z, .tar, etc.) saved without additional compression
 - **Send `docker pull <image>`** → downloads and saves Docker image as gz
 
 ## Commands

@@ -5,8 +5,12 @@ RUN apk add --no-cache python3 py3-pip
 
 WORKDIR /app
 
+# Create virtual environment
+RUN python3 -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
+
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/ ./src/
 
@@ -34,6 +38,6 @@ while ! docker info > /dev/null 2>&1; do\n\
 done\n\
 echo "Docker daemon is ready"\n\
 # Run the bot\n\
-python3 -m src' > /app/start.sh && chmod +x /app/start.sh
+python -m src' > /app/start.sh && chmod +x /app/start.sh
 
 CMD ["/app/start.sh"]

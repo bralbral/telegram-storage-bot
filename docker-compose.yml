@@ -1,0 +1,16 @@
+services:
+  storage-bot:
+    build: .
+    container_name: storage-bot
+    privileged: true
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_IDS=${ADMIN_IDS}
+      - DOWNLOAD_DIR=/var/lib/downloads
+      - USE_LOCAL_API=${USE_LOCAL_API:-false}
+      - LOCAL_API_URL=${LOCAL_API_URL:-http://127.0.0.1:8081}
+    volumes:
+      - ./downloads:/var/lib/downloads
+    env_file:
+      - .env
