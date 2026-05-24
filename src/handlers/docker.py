@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import gzip
-import hashlib
 import logging
 import re
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -46,12 +46,10 @@ def register_text_handlers(dp: Any, download_dir: Path) -> None:
 
             # Generate filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            hash_part = hashlib.sha256(image_name.encode()).hexdigest()[:8]
+            uuid_part = uuid.uuid4().hex[:8]
 
             safe_image_name = image_name.replace("/", "_").replace(":", "_")
-            tar_filename = (
-                f"docker_{safe_image_name}_{prefix}_{timestamp}_{hash_part}.tar"
-            )
+            tar_filename = f"{prefix}_{safe_image_name}_{timestamp}_{uuid_part}.tar"
             tar_filepath = download_dir / tar_filename
 
             # Save image as tar

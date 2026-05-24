@@ -1,6 +1,6 @@
 import gzip
-import hashlib
 import logging
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -13,7 +13,7 @@ async def save_file_gzip(
     download_dir: Path,
     original_filename: str = "",
 ) -> str:
-    """Compress file content with gzip and save as prefix_timestamp_hash.gz.
+    """Compress file content with gzip and save as prefix_timestamp_uuid.gz.
 
     Archive filename includes prefix, original filename preserved inside gzip.
 
@@ -30,10 +30,10 @@ async def save_file_gzip(
         OSError: If file writing fails
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    hash_part = hashlib.sha256(file_content).hexdigest()[:8]
+    uuid_part = uuid.uuid4().hex[:8]
 
     # Archive filename with prefix
-    filename = f"{prefix}_{timestamp}_{hash_part}.gz"
+    filename = f"{prefix}_{timestamp}_{uuid_part}.gz"
     filepath = download_dir / filename
 
     try:
@@ -72,18 +72,18 @@ async def save_file_direct(
         OSError: If file writing fails
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    hash_part = hashlib.sha256(file_content).hexdigest()[:8]
+    uuid_part = uuid.uuid4().hex[:8]
 
     # Use original filename extension if available
     if original_filename:
         # Extract extension from original filename
         if "." in original_filename:
             ext = original_filename.rsplit(".", 1)[-1]
-            filename = f"{prefix}_{timestamp}_{hash_part}.{ext}"
+            filename = f"{prefix}_{timestamp}_{uuid_part}.{ext}"
         else:
-            filename = f"{prefix}_{timestamp}_{hash_part}"
+            filename = f"{prefix}_{timestamp}_{uuid_part}"
     else:
-        filename = f"{prefix}_{timestamp}_{hash_part}"
+        filename = f"{prefix}_{timestamp}_{uuid_part}"
 
     filepath = download_dir / filename
 
