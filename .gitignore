@@ -5,3 +5,4 @@ __pycache__/
 config.yaml
 users.db
 venv/
+.venv/

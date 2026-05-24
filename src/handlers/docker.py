@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-import aiofiles
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import aiofiles
 from aiogram import F
 from aiogram.types import Message
 
 if TYPE_CHECKING:
     pass
+
+logger = logging.getLogger(__name__)
 
 
 def register_text_handlers(dp: Any, download_dir: Path) -> None:
@@ -42,9 +45,18 @@ def register_text_handlers(dp: Any, download_dir: Path) -> None:
             prefix = user_data[0] or ""
             docker_file = download_dir / "docker_images.txt"
 
-            async with aiofiles.open(docker_file, "a") as f:
-                await f.write(f"{prefix}_{text}\n")
-            await message.answer(f"🐳 Docker image saved: {text[:50]}...")
+            try:
+                async with aiofiles.open(docker_file, "a") as f:
+                    await f.write(f"{prefix}_{text}\n")
+                await message.answer(f"🐳 Docker image saved: {text[:50]}...")
+                logger.info(
+                    f"Docker image saved by user {message.from_user.id}: {text[:50]}"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to save docker image for user {message.from_user.id}: {e}"
+                )
+                await message.answer("❌ Failed to save docker image")
         else:
             await message.answer("📄 Please send a file or Docker image link.")
 

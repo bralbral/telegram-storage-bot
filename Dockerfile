@@ -9,4 +9,9 @@ COPY src/ ./src/
 
 RUN mkdir -p downloads
 
+ENV BOT_TOKEN=""
+ENV USE_LOCAL_API="false"
+ENV LOCAL_API_URL="http://127.0.0.1:8081"
+ENV ADMIN_IDS=""
+
 CMD ["python", "-m", "src"]

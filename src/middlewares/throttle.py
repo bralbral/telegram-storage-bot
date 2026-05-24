@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Callable
@@ -11,6 +12,8 @@ from utils.variables import THROTTLE_RATE
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
+
+logger = logging.getLogger(__name__)
 
 
 class ThrottleMiddleware(BaseMiddleware):
@@ -32,11 +35,16 @@ class ThrottleMiddleware(BaseMiddleware):
         user_id = event.from_user.id
         current_time = time.time()
 
-        timestamps = self.user_timestamps[user_id]
-        timestamps[:] = [t for t in timestamps if current_time - t < self.rate]
+        try:
+            timestamps = self.user_timestamps[user_id]
+            timestamps[:] = [t for t in timestamps if current_time - t < self.rate]
 
-        if timestamps:
-            return
+            if timestamps:
+                logger.debug(f"Rate limit exceeded for user {user_id}")
+                return
 
-        timestamps.append(current_time)
-        return await handler(event, data)
+            timestamps.append(current_time)
+            return await handler(event, data)
+        except Exception as e:
+            logger.error(f"Error in throttle middleware for user {user_id}: {e}")
+            return await handler(event, data)

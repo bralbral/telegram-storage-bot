@@ -1,0 +1,23 @@
+# Telegram Storage Bot Configuration
+# Copy this file to config.yaml and fill in your values
+
+bot:
+  # Get your bot token from @BotFather
+  token: "YOUR_BOT_TOKEN_HERE"
+  
+  # Enable local Bot API server for large files (>20MB)
+  # Set up local server: https://github.com/tdlib/telegram-bot-api
+  use_local_api: false
+  
+  # Local Bot API server URL (only used if use_local_api is true)
+  local_api_url: "http://127.0.0.1:8081"
+  
+  # List of Telegram user IDs that are admins
+  # Get your ID from @userinfobot
+  admin_ids:
+    - 123456789
+    # - 987654321  # Add more admins if needed
+
+storage:
+  # Directory where files will be saved
+  download_dir: ./downloads
