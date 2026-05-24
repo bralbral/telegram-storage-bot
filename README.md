@@ -1,151 +1,85 @@
 # Telegram Storage Bot
 
-A Telegram bot that saves files to disk, with support for large files via local Bot API server.
+Telegram bot for saving files and Docker images to disk with gzip compression.
 
 ## Project Structure
 
 ```
-├── config.example.yaml  # Example configuration file
-├── config.yaml          # Configuration file (not in git)
-├── requirements.txt     # Python dependencies
+├── .env.example          # Environment variables example
+├── requirements.txt      # Python dependencies
+├── Dockerfile           # Docker image
 ├── src/
 │   ├── __main__.py      # Entry point
-│   ├── handlers/
-│   │   ├── __init__.py
-│   │   ├── admin.py     # Admin commands
-│   │   ├── docker.py    # Docker link handling
-│   │   ├── files.py     # File handling
-│   │   └── user.py      # User commands
-│   ├── db/
-│   │   ├── __init__.py
-│   │   └── database.py  # SQLite database with aiosqlite
-│   ├── middlewares/
-│   │   ├── access.py    # Access & throttle middleware
-│   │   └── throttle.py  # Rate limiting middleware
-│   └── utils/
-│       ├── __init__.py
-│       ├── file_utils.py # File compression utilities
-│       └── variables.py  # Paths and config
-└── downloads/           # Saved files (created automatically)
+│   ├── handlers/        # Command handlers
+│   ├── db/              # SQLite database
+│   ├── middlewares/     # Access control & rate limiting
+│   └── utils/           # File utilities
+└── downloads/           # Saved files
 ```
 
-## Setup
+## Quick Start
 
-### Local Setup
+### Local
 
 1. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Create a bot with @BotFather and get the token
-
-3. Copy the example configuration and edit it:
+2. Configure environment variables:
 ```bash
-cp config.example.yaml config.yaml
+cp .env.example .env
+# Edit .env with your values
 ```
 
-4. Configure `config.yaml` with your bot token and admin IDs
-
-5. For large files (>20MB), set up the [local Bot API server](https://github.com/tdlib/telegram-bot-api):
-```bash
-./telegram-bot-api --api-id YOUR_API_ID --api-hash YOUR_API_HASH --token YOUR_BOT_TOKEN
-```
-
-6. Run the bot:
+3. Run:
 ```bash
 python -m src
 ```
 
-### Docker Setup
+### Docker
 
-1. Build the Docker image:
 ```bash
 docker build -t storage-bot .
-```
-
-2. Run the container with environment variables:
-```bash
 docker run -d \
-  -e BOT_TOKEN="YOUR_BOT_TOKEN" \
-  -e ADMIN_IDS="123456789,987654321" \
-  -e USE_LOCAL_API="false" \
-  -v $(pwd)/downloads:/app/downloads \
-  -v $(pwd)/users.db:/app/users.db \
+  --privileged \
+  -e BOT_TOKEN="YOUR_TOKEN" \
+  -e ADMIN_IDS="123456789" \
+  -v $(pwd)/downloads:/var/lib/downloads \
   storage-bot
 ```
 
-## Configuration
+**Note**: Docker-in-Docker requires `--privileged` flag. The Docker daemon runs inside the container, and images are automatically deleted after export to save space.
 
-### Using config.yaml
+## Environment Variables
 
-```yaml
-bot:
-  token: YOUR_BOT_TOKEN
-  use_local_api: true              # Enable local Bot API for large files
-  local_api_url: http://127.0.0.1:8081
-  admin_ids:                       # Telegram IDs of admins
-    - 123456789
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `BOT_TOKEN` | Yes | - | Bot token from @BotFather |
+| `ADMIN_IDS` | Yes | - | Comma-separated admin Telegram IDs |
+| `DOWNLOAD_DIR` | No | ./downloads | Directory for downloaded files |
+| `USE_LOCAL_API` | No | false | Enable local Bot API for large files |
+| `LOCAL_API_URL` | No | http://127.0.0.1:8081 | Local Bot API server URL |
 
-storage:
-  download_dir: ./downloads
-```
+## Access Control
 
-### Using Environment Variables
+- **Admins**: Full access, auto-added to database, can use all commands
+- **Regular users**: Must be added by admin, need prefix for files
 
-- `BOT_TOKEN` - Your bot token (required)
-- `USE_LOCAL_API` - Set to "true" to use local Bot API (default: false)
-- `LOCAL_API_URL` - Local Bot API server URL (default: http://127.0.0.1:8081)
-- `ADMIN_IDS` - Comma-separated list of admin Telegram IDs (optional)
+## Usage
 
-## Features
-
-- **File Storage**: Compress and save files as gzip with user-defined prefixes
-- **Docker Links**: Save Docker image links to a text file
-- **Access Control**: Admin-managed user access list
-- **Rate Limiting**: Built-in throttling to prevent abuse
-- **Large File Support**: Optional local Bot API server for files >20MB
-- **Logging**: Comprehensive logging for monitoring and debugging
-- **Docker Support**: Containerized deployment with environment variable configuration
+- **Send files** → saved as gzip with original filename preserved inside
+- **Send `docker pull <image>`** → downloads and saves Docker image as gz
+- **Send Docker links** → saved to docker_images.txt
 
 ## Commands
 
-### Admin Commands
-- `/add_user <telegram_id> [prefix]` - Add user to allowed list with optional prefix
-- `/remove_user <telegram_id>` - Remove user from allowed list
-- `/list_users` - List all users with their prefixes
+### Admin (visible only to admins)
+- `/add_user <id> [prefix]` - Add user
+- `/remove_user <id>` - Remove user
+- `/list_users` - List all users
+- `/status` - Bot status
 
-### User Commands
-- `/start` - Show greeting with current prefix
-- `/set_prefix <prefix>` - Set file prefix (1-5 latin alphanumeric characters)
-
-### Usage
-- Send any file (document, photo, video, audio, voice, animation) - saved as gzip with prefix
-- Send Docker image links - saved to docker_images.txt
-
-## Security Improvements
-
-- SHA256 hashing for file integrity (replacing MD5)
-- Input validation for all user inputs
-- Enhanced error handling and logging
-- Admin command authorization checking
-- Config validation and error reporting
-
-## Development
-
-### Code Quality Tools
-
-The project uses pre-commit hooks for code quality:
-- Ruff for linting and formatting
-- MyPy for type checking
-- isort for import sorting
-
-Install pre-commit hooks:
-```bash
-pre-commit install
-```
-
-Run checks manually:
-```bash
-pre-commit run --all-files
-```
+### User (visible to everyone)
+- `/start` - Show greeting
+- `/set_prefix <prefix>` - Set file prefix (1-5 chars)

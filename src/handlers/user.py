@@ -2,9 +2,14 @@ import logging
 import re
 
 from aiogram.filters import CommandObject
-from aiogram.types import BotCommand, Message
+from aiogram.types import (
+    BotCommand,
+    BotCommandScopeAllPrivateChats,
+    BotCommandScopeChat,
+    Message,
+)
 
-from db.database import db
+from src.db.database import db
 
 logger = logging.getLogger(__name__)
 
@@ -57,18 +62,39 @@ async def cmd_set_prefix(message: Message, command: CommandObject, user_data: tu
         await message.answer("❌ Failed to set prefix. Please try again.")
 
 
-async def set_commands(bot):
-    """Set bot commands menu in Telegram."""
-    commands = [
+async def set_commands(bot, admin_ids: list[int] | None = None):
+    """Set bot commands menu based on user role."""
+    admin_ids = admin_ids or []
+
+    # Basic commands for all users
+    basic_commands = [
         BotCommand(command="start", description="Start the bot"),
         BotCommand(command="set_prefix", description="Set file prefix (5 chars)"),
-        BotCommand(command="add_user", description="[Admin] Add user"),
-        BotCommand(command="remove_user", description="[Admin] Remove user"),
-        BotCommand(command="list_users", description="[Admin] List all users"),
     ]
+
+    # Admin commands (only for admins)
+    admin_commands = [
+        BotCommand(command="start", description="Start the bot"),
+        BotCommand(command="set_prefix", description="Set file prefix (5 chars)"),
+        BotCommand(command="add_user", description="Add user"),
+        BotCommand(command="remove_user", description="Remove user"),
+        BotCommand(command="list_users", description="List all users"),
+        BotCommand(command="status", description="Bot status"),
+    ]
+
     try:
-        await bot.set_my_commands(commands)
-        logger.info("Bot commands set successfully")
+        # Set basic commands for all private chats
+        await bot.set_my_commands(
+            basic_commands, scope=BotCommandScopeAllPrivateChats()
+        )
+        logger.info("Basic commands set for all users")
+
+        # Set admin commands for each admin
+        for admin_id in admin_ids:
+            await bot.set_my_commands(
+                admin_commands, scope=BotCommandScopeChat(chat_id=admin_id)
+            )
+        logger.info(f"Admin commands set for {len(admin_ids)} admin(s)")
     except Exception as e:
         logger.error(f"Failed to set bot commands: {e}")
         raise

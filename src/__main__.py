@@ -3,16 +3,35 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any
+from pathlib import Path
 
-import yaml
 from aiogram import Bot, Dispatcher
+from aiogram.filters import Command
 
-from db.database import db
-from handlers import docker, files, user
-from middlewares.access import AccessMiddleware
-from middlewares.throttle import ThrottleMiddleware
-from utils.variables import CONFIG_PATH, DOWNLOAD_DIR
+from src.db.database import db
+from src.handlers import docker, files, user
+from src.middlewares.access import AccessMiddleware
+from src.middlewares.throttle import ThrottleMiddleware
+from src.utils.variables import DOWNLOAD_DIR
+
+
+# Load environment variables from .env file if it exists (before logging setup)
+def load_env_file() -> None:
+    """Load environment variables from .env file if it exists."""
+    env_file = Path(__file__).parent.parent.parent / ".env"
+    if env_file.exists():
+        try:
+            with open(env_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, value = line.split("=", 1)
+                        os.environ.setdefault(key.strip(), value.strip())
+        except Exception as e:
+            print(f"Warning: Failed to load .env file: {e}")
+
+
+load_env_file()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,30 +41,12 @@ logger = logging.getLogger(__name__)
 
 
 def get_config() -> dict:
-    """Load configuration from config.yaml or environment variables."""
-    config: dict[str, dict[str, Any]] = {"bot": {}, "storage": {}}
+    """Load configuration from environment variables only."""
+    bot_token = os.getenv("BOT_TOKEN")
+    use_local_api = os.getenv("USE_LOCAL_API", "false").lower() == "true"
+    local_api_url = os.getenv("LOCAL_API_URL", "http://127.0.0.1:8081")
 
-    try:
-        with open(CONFIG_PATH) as f:
-            config = yaml.safe_load(f)
-    except FileNotFoundError:
-        logger.warning(
-            f"Config file not found: {CONFIG_PATH}, using environment variables"
-        )
-    except yaml.YAMLError as e:
-        logger.error(f"Failed to parse config file: {e}, using environment variables")
-
-    bot_token = config.get("bot", {}).get("token") or os.getenv("BOT_TOKEN")
-    use_local_api = config.get("bot", {}).get("use_local_api", False)
-    local_api_url = config.get("bot", {}).get("local_api_url", "http://127.0.0.1:8081")
-    admin_ids = config.get("bot", {}).get("admin_ids", [])
-
-    if os.getenv("USE_LOCAL_API", "false").lower() == "true":
-        use_local_api = True
-
-    if os.getenv("LOCAL_API_URL"):
-        local_api_url = os.getenv("LOCAL_API_URL")
-
+    admin_ids = []
     admin_ids_env = os.getenv("ADMIN_IDS")
     if admin_ids_env:
         try:
@@ -59,8 +60,7 @@ def get_config() -> dict:
             "use_local_api": use_local_api,
             "local_api_url": local_api_url,
             "admin_ids": admin_ids,
-        },
-        "storage": config.get("storage", {}),
+        }
     }
 
 
@@ -88,19 +88,22 @@ async def setup_bot() -> tuple[Bot, Dispatcher]:
     dp = Dispatcher()
 
     await db.init()
-    await user.set_commands(bot)
+    await user.set_commands(bot, admin_ids)
     dp.message.outer_middleware(ThrottleMiddleware())
-    dp.message.outer_middleware(AccessMiddleware(db))
+    dp.message.outer_middleware(AccessMiddleware(db, admin_ids))
 
-    dp.message.register(user.cmd_start, commands=["start"])
-    dp.message.register(user.cmd_set_prefix, commands=["set_prefix"])
+    dp.message.register(user.cmd_start, Command("start"))
+    dp.message.register(user.cmd_set_prefix, Command("set_prefix"))
 
-    from handlers.admin import create_admin_handlers
+    from src.handlers.admin import create_admin_handlers
 
-    cmd_add_user, cmd_remove_user, cmd_list_users = create_admin_handlers(admin_ids)
-    dp.message.register(cmd_add_user, commands=["add_user"])
-    dp.message.register(cmd_remove_user, commands=["remove_user"])
-    dp.message.register(cmd_list_users, commands=["list_users"])
+    cmd_add_user, cmd_remove_user, cmd_list_users, cmd_status = create_admin_handlers(
+        admin_ids
+    )
+    dp.message.register(cmd_add_user, Command("add_user"))
+    dp.message.register(cmd_remove_user, Command("remove_user"))
+    dp.message.register(cmd_list_users, Command("list_users"))
+    dp.message.register(cmd_status, Command("status"))
 
     files.register_file_handlers(dp, DOWNLOAD_DIR)
     docker.register_text_handlers(dp, DOWNLOAD_DIR)

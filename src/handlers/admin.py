@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import logging
+import os
+import platform
 import re
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 
 from aiogram.filters import CommandObject
 from aiogram.types import Message
 
-from db.database import db
+from src.db.database import db
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +27,7 @@ def create_admin_handlers(
 ) -> tuple[
     Callable[[Message, CommandObject], Awaitable[None]],
     Callable[[Message, CommandObject], Awaitable[None]],
+    Callable[[Message], Awaitable[None]],
     Callable[[Message], Awaitable[None]],
 ]:
     """Create admin command handlers with admin_ids bound via closure."""
@@ -113,4 +117,33 @@ def create_admin_handlers(
             await message.answer("❌ Failed to list users")
             logger.error(f"Failed to list users: {e}")
 
-    return cmd_add_user, cmd_remove_user, cmd_list_users
+    async def cmd_status(message: Message) -> None:
+        """Admin only: Show bot status and system information."""
+        if message.from_user.id not in admin_ids:
+            logger.warning(
+                f"Unauthorized admin command attempt by user {message.from_user.id}"
+            )
+            return
+
+        try:
+            users = await db.get_all_users()
+            uptime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            status_text = "📊 **Bot Status**\n\n"
+            status_text += f"🕐 **Time**: {uptime}\n"
+            status_text += f"👥 **Users**: {len(users)} registered\n"
+            status_text += f"🤖 **Python**: {platform.python_version()}\n"
+            status_text += f"💻 **System**: {platform.system()} {platform.release()}\n"
+            status_text += f"🔧 **Admins**: {len(admin_ids)} configured\n"
+
+            # Check if using local API
+            use_local_api = os.getenv("USE_LOCAL_API", "false").lower() == "true"
+            status_text += f"🌐 **API**: {'Local' if use_local_api else 'Standard'}\n"
+
+            await message.answer(status_text, parse_mode="Markdown")
+            logger.info(f"Admin {message.from_user.id} requested status")
+        except Exception as e:
+            await message.answer("❌ Failed to get status")
+            logger.error(f"Failed to get status: {e}")
+
+    return cmd_add_user, cmd_remove_user, cmd_list_users, cmd_status

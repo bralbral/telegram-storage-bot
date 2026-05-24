@@ -2,6 +2,7 @@ downloads/
 __pycache__/
 *.pyc
 .env
+.env.local
 config.yaml
 users.db
 venv/

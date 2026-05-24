@@ -13,4 +13,4 @@ __pycache__
 downloads
 users.db
 config.yaml
-config.example.yaml
+.env.example

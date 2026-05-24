@@ -5,7 +5,7 @@ from pathlib import Path
 
 import aiosqlite
 
-from utils.variables import DB_PATH
+from src.utils.variables import DB_PATH
 
 logger = logging.getLogger(__name__)
 

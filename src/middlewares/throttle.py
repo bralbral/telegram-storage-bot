@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import logging
 import time
-from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Callable
 
 from aiogram.dispatcher.middlewares.base import BaseMiddleware
 from aiogram.types import Message
 
-from utils.variables import THROTTLE_RATE
+from src.utils.variables import THROTTLE_RATE
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -17,13 +16,13 @@ logger = logging.getLogger(__name__)
 
 
 class ThrottleMiddleware(BaseMiddleware):
-    """Middleware that limits users to 1 action per THROTTLE_RATE seconds."""
+    """Rate limiting middleware - limits actions per user."""
 
-    __slots__ = ("rate", "user_timestamps")
+    __slots__ = ("rate", "user_last_action")
 
     def __init__(self, rate: float | None = None):
         self.rate = rate or THROTTLE_RATE
-        self.user_timestamps: dict[int, list[float]] = defaultdict(list)
+        self.user_last_action: dict[int, float] = {}
 
     async def __call__(
         self,
@@ -36,15 +35,24 @@ class ThrottleMiddleware(BaseMiddleware):
         current_time = time.time()
 
         try:
-            timestamps = self.user_timestamps[user_id]
-            timestamps[:] = [t for t in timestamps if current_time - t < self.rate]
+            last_action = self.user_last_action.get(user_id, 0)
+            time_since_last = current_time - last_action
 
-            if timestamps:
-                logger.debug(f"Rate limit exceeded for user {user_id}")
+            if time_since_last < self.rate:
+                remaining_time = self.rate - time_since_last
+                logger.debug(
+                    f"Rate limit exceeded for user {user_id}. Wait {remaining_time:.1f}s"
+                )
+                # Inform user about rate limit
+                await event.answer(
+                    f"⏳ Please wait {remaining_time:.1f} seconds before next action"
+                )
                 return
 
-            timestamps.append(current_time)
+            # Update last action time
+            self.user_last_action[user_id] = current_time
             return await handler(event, data)
         except Exception as e:
             logger.error(f"Error in throttle middleware for user {user_id}: {e}")
+            # On error, allow the action to avoid blocking legitimate users
             return await handler(event, data)
