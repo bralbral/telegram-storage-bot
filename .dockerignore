@@ -1,0 +1,15 @@
+.git
+.gitignore
+.pre-commit-config.yaml
+README.md
+__pycache__
+*.pyc
+*.pyo
+.env
+.venv
+.envrc
+.vscode
+.idea
+downloads
+users.db
+config.yaml

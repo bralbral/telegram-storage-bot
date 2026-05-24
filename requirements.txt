@@ -1,0 +1,4 @@
+aiogram==3.28.2
+aiosqlite==0.22.1
+aiofiles==25.1.0
+pyyaml==6.0.3
