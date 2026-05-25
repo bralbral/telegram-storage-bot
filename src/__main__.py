@@ -9,6 +9,7 @@ from pathlib import Path
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 
+from src.config import Config
 from src.db.database import Database
 from src.handlers import docker, files, user
 from src.handlers.admin import create_admin_handlers
@@ -16,7 +17,6 @@ from src.health import HealthServer
 from src.middlewares.access import AccessMiddleware
 from src.middlewares.throttle import ThrottleMiddleware
 from src.task_manager import TaskManager
-from src.utils.variables import DOWNLOAD_DIR
 
 
 # Load environment variables from .env file if it exists (before logging setup)
@@ -48,45 +48,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def get_config() -> dict:
-    """Load configuration from environment variables only."""
-    bot_token = os.getenv("BOT_TOKEN")
-    use_local_api = os.getenv("USE_LOCAL_API", "false").lower() == "true"
-    local_api_url = os.getenv("LOCAL_API_URL", "http://127.0.0.1:8081")
-
-    admin_ids = []
-    admin_ids_env = os.getenv("ADMIN_IDS")
-    if admin_ids_env:
-        try:
-            admin_ids = [int(id.strip()) for id in admin_ids_env.split(",")]
-        except ValueError:
-            logger.error("Invalid ADMIN_IDS format in environment variables")
-
-    return {
-        "bot": {
-            "token": bot_token,
-            "use_local_api": use_local_api,
-            "local_api_url": local_api_url,
-            "admin_ids": admin_ids,
-        }
-    }
-
-
-async def setup_bot() -> tuple[Bot, Dispatcher, HealthServer, Database, TaskManager]:
+async def setup_bot(
+    config: Config,
+) -> tuple[Bot, Dispatcher, HealthServer, Database, TaskManager]:
     """Create and configure bot and dispatcher."""
-    config = get_config()
-
-    bot_token = config["bot"]["token"]
-    admin_ids = config["bot"]["admin_ids"]
+    bot_token = config.bot_token
+    admin_ids = config.admin_ids
 
     if not bot_token:
         logger.error("Bot token is not configured")
         raise ValueError("Bot token is required")
 
-    if config["bot"]["use_local_api"]:
+    if config.use_local_api:
         bot = Bot(
             token=bot_token,
-            api_server_url=config["bot"]["local_api_url"],
+            api_server_url=config.local_api_url,
         )
         logger.info("Using local Bot API server")
     else:
@@ -96,15 +72,17 @@ async def setup_bot() -> tuple[Bot, Dispatcher, HealthServer, Database, TaskMana
     dp = Dispatcher()
 
     # Initialize database
-    database = Database()
+    database = Database(config.db_path)
     await database.init()
     await user.set_commands(bot, admin_ids)
-    dp.message.outer_middleware(ThrottleMiddleware())
+    dp.message.outer_middleware(ThrottleMiddleware(config.throttle_rate))
 
     # Initialize task manager
-    task_manager_instance = TaskManager()
+    task_manager_instance = TaskManager(config.max_concurrent_tasks)
     dp.message.outer_middleware(
-        AccessMiddleware(database, admin_ids, task_manager_instance, DOWNLOAD_DIR)
+        AccessMiddleware(
+            database, admin_ids, task_manager_instance, config.download_dir
+        )
     )
 
     dp.message.register(user.cmd_start, Command("start"))
@@ -118,12 +96,11 @@ async def setup_bot() -> tuple[Bot, Dispatcher, HealthServer, Database, TaskMana
     dp.message.register(cmd_list_users, Command("list_users"))
     dp.message.register(cmd_status, Command("status"))
 
-    files.register_file_handlers(dp, DOWNLOAD_DIR)
-    docker.register_text_handlers(dp, DOWNLOAD_DIR)
+    files.register_file_handlers(dp, config.download_dir, config.max_file_size)
+    docker.register_text_handlers(dp, config.download_dir)
 
     # Health check server
-    health_port = int(os.getenv("HEALTH_PORT", "8080"))
-    health_server = HealthServer(port=health_port)
+    health_server = HealthServer(port=config.health_port)
 
     logger.info(f"Bot configured with {len(admin_ids)} admin(s)")
     return bot, dp, health_server, database, task_manager_instance
@@ -131,6 +108,7 @@ async def setup_bot() -> tuple[Bot, Dispatcher, HealthServer, Database, TaskMana
 
 async def run_bot() -> None:
     """Run the bot with graceful shutdown."""
+    config = Config()
     bot, dp, health_server, database, task_manager_instance = (
         None,
         None,
@@ -150,8 +128,10 @@ async def run_bot() -> None:
     signal.signal(signal.SIGINT, signal_handler)
 
     try:
-        bot, dp, health_server, database, task_manager_instance = await setup_bot()
-        DOWNLOAD_DIR.mkdir(exist_ok=True)
+        bot, dp, health_server, database, task_manager_instance = await setup_bot(
+            config
+        )
+        config.download_dir.mkdir(parents=True, exist_ok=True)
 
         # Start health check server
         await health_server.start()

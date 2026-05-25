@@ -2,15 +2,11 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Awaitable
+from typing import Any, Callable
 
 from aiogram.dispatcher.middlewares.base import BaseMiddleware
 from aiogram.types import Message
-
-from src.utils.variables import THROTTLE_RATE
-
-if TYPE_CHECKING:
-    from collections.abc import Awaitable
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +16,8 @@ class ThrottleMiddleware(BaseMiddleware):
 
     __slots__ = ("rate", "user_last_action")
 
-    def __init__(self, rate: float | None = None):
-        self.rate = rate or THROTTLE_RATE
+    def __init__(self, rate: float):
+        self.rate = rate
         self.user_last_action: dict[int, float] = {}
 
     async def __call__(

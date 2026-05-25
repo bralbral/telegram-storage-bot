@@ -35,13 +35,13 @@ class TaskManager:
             message: Message for user notifications
             task_type: Type of task for notifications
         """
-        queue_position = self.user_queues[user_id].qsize()
+        is_queued = len(self.active_tasks) >= self.max_concurrent_tasks
 
-        # Notify if queue is not empty
-        if queue_position > 0:
+        # Notify if task is queued due to worker limit
+        if is_queued:
             await message.answer(
-                f"⏳ {task_type} queued. Position in queue: {queue_position}. "
-                f"Will start when previous tasks complete."
+                f"⏳ All workers are busy. Your {task_type} is queued. "
+                f"You'll be notified when it starts."
             )
 
         # Wait for semaphore slot
@@ -49,9 +49,9 @@ class TaskManager:
         self.active_tasks.add(user_id)
 
         try:
-            # Notify user when task starts
-            if queue_position > 0:
-                await message.answer(f"✅ Starting {task_type}...")
+            # Notify user when task starts (only if it was queued)
+            if is_queued:
+                await message.answer(f"✅ Starting your {task_type}...")
 
             # Execute task
             await task_func

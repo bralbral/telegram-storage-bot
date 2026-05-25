@@ -6,7 +6,6 @@ from pathlib import Path
 import aiosqlite
 
 from src.exceptions import DatabaseError
-from src.utils.variables import DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +15,7 @@ class Database:
 
     __slots__ = ("path", "_connection")
 
-    def __init__(self, path: str = DB_PATH) -> None:
+    def __init__(self, path: str | Path) -> None:
         self.path = str(path) if isinstance(path, Path) else path
         self._connection: aiosqlite.Connection | None = None
 

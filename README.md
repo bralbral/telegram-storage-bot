@@ -69,6 +69,11 @@ docker run -d \
 | `BOT_TOKEN` | Yes | - | Bot token from @BotFather |
 | `ADMIN_IDS` | Yes | - | Comma-separated admin Telegram IDs |
 | `DOWNLOAD_DIR` | No | ./downloads | Directory for downloaded files |
+| `DB_PATH` | No | ./users.db | Database file path |
+| `MAX_FILE_SIZE` | No | 2147483648 (2GB) | Maximum file size in bytes |
+| `THROTTLE_RATE` | No | 3.0 | Throttle rate in seconds |
+| `MAX_CONCURRENT_TASKS` | No | 3 | Max concurrent background tasks |
+| `HEALTH_PORT` | No | 8080 | Health check server port |
 | `USE_LOCAL_API` | No | false | Enable local Bot API for large files |
 | `LOCAL_API_URL` | No | http://127.0.0.1:8081 | Local Bot API server URL |
 

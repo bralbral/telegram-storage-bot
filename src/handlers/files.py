@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from aiogram import F
 from aiogram.exceptions import TelegramBadRequest
@@ -10,7 +10,8 @@ from aiogram.types import Message
 
 from src.utils.file_utils import save_file_direct_streaming, save_file_gzip_streaming
 
-MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2GB
+logger = logging.getLogger(__name__)
+
 COMPRESSED_EXTENSIONS = {
     ".gz",
     ".zip",
@@ -29,11 +30,6 @@ COMPRESSED_EXTENSIONS = {
     ".iso",
 }
 
-if TYPE_CHECKING:
-    pass
-
-logger = logging.getLogger(__name__)
-
 
 def is_already_compressed(filename: str) -> bool:
     """Check if file has a compressed extension."""
@@ -51,6 +47,7 @@ async def process_file_in_background(
     original_filename: str,
     user_id: int,
     download_dir: Path,
+    max_file_size: int,
 ) -> None:
     """Background task to compress and save file using streaming."""
     try:
@@ -75,7 +72,11 @@ async def process_file_in_background(
 
 
 async def handle_file(
-    message: Message, user_data: tuple[str, ...], task_manager: Any, download_dir: Path
+    message: Message,
+    user_data: tuple[str, ...],
+    task_manager: Any,
+    download_dir: Path,
+    max_file_size: int,
 ) -> None:
     """Handle incoming files - compress and save as gzip in background."""
     prefix = user_data[0] or ""
@@ -109,12 +110,14 @@ async def handle_file(
         file_size = message.animation.file_size
 
     if file_id:
-        # Check file size limit (2GB)
-        if file_size and file_size > MAX_FILE_SIZE:
+        # Check file size limit
+        if file_size and file_size > max_file_size:
             logger.info(
                 f"File too large for user {message.from_user.id}: {file_size} bytes"
             )
-            await message.reply("❌ File too large. Maximum size is 2GB.")
+            await message.reply(
+                f"❌ File too large. Maximum size is {max_file_size / (1024 * 1024 * 1024):.1f}GB."
+            )
             return
         try:
             file_info = await message.bot.get_file(file_id)
@@ -137,6 +140,7 @@ async def handle_file(
                     original_filename,
                     message.from_user.id,
                     download_dir,
+                    max_file_size,
                 ),
                 message=message,
                 task_type="File processing",
@@ -156,8 +160,11 @@ async def handle_file(
             await message.reply("❌ Failed to process file")
 
 
-def register_file_handlers(dp: Any, download_dir: Path) -> None:
+def register_file_handlers(dp: Any, download_dir: Path, max_file_size: int) -> None:
     """Register file handlers with the dispatcher."""
     dp.message.register(
-        handle_file, F.document | F.photo | F.video | F.audio | F.voice | F.animation
+        lambda message, user_data, task_manager: handle_file(
+            message, user_data, task_manager, download_dir, max_file_size
+        ),
+        F.document | F.photo | F.video | F.audio | F.voice | F.animation,
     )

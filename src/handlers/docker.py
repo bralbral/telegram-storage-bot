@@ -8,16 +8,13 @@ import uuid
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import docker
 from aiogram import F
 from aiogram.types import Message
 
 from src.task_manager import TaskManager
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
