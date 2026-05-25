@@ -26,8 +26,15 @@ def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> Non
         user_id: int,
         download_dir: Path,
         docker_host: str,
-    ) -> None:
-        """Synchronous function to download Docker image using Docker SDK."""
+    ) -> str:
+        """Synchronous function to download Docker image using Docker SDK.
+
+        Returns:
+            The filename of the saved gz file
+
+        Raises:
+            Exception: If docker pull or processing fails
+        """
         client = None
         try:
             logger.info(f"Starting Docker image download for {image_name}")
@@ -65,7 +72,7 @@ def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> Non
             # Verify tar file exists
             if not tar_filepath.exists():
                 logger.error(f"Tar file was not created: {tar_filepath}")
-                return
+                raise RuntimeError(f"Tar file was not created: {tar_filepath}")
 
             # Compress to gz using gzip.compress
             logger.info("Compressing tar file to gzip")
@@ -125,6 +132,8 @@ def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> Non
         except Exception as e:
             logger.error(f"Error in async wrapper: {e}", exc_info=True)
             await message.reply(f"❌ Failed to download image: {e}")
+        finally:
+            return None
 
     async def handle_text(
         message: Message,
