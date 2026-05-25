@@ -5,7 +5,6 @@ import gzip
 import logging
 import re
 import uuid
-from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -148,7 +147,9 @@ def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> Non
                 await message.answer("❌ Invalid Docker image name")
                 return
 
-            logger.info(f"Processing docker pull: {image_name} with docker_host={docker_host}")
+            logger.info(
+                f"Processing docker pull: {image_name} with docker_host={docker_host}"
+            )
 
             # Process in background without task queue
             asyncio.create_task(
