@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any
@@ -74,7 +75,6 @@ async def process_file_in_background(
 async def handle_file(
     message: Message,
     user_data: tuple[str, ...],
-    task_manager: Any,
     download_dir: Path,
     max_file_size: int,
 ) -> None:
@@ -130,10 +130,9 @@ async def handle_file(
             # Send initial message
             await message.reply("⏳ Saving file...")
 
-            # Process in background with task queue
-            await task_manager.add_task(
-                user_id=message.from_user.id,
-                task_func=process_file_in_background(
+            # Process in background without task queue
+            asyncio.create_task(
+                process_file_in_background(
                     message,
                     destination,
                     prefix,
@@ -141,9 +140,7 @@ async def handle_file(
                     message.from_user.id,
                     download_dir,
                     max_file_size,
-                ),
-                message=message,
-                task_type="File processing",
+                )
             )
         except TelegramBadRequest as e:
             logger.error(
@@ -162,9 +159,13 @@ async def handle_file(
 
 def register_file_handlers(dp: Any, download_dir: Path, max_file_size: int) -> None:
     """Register file handlers with the dispatcher."""
+
+    async def file_handler(message: Message, **kwargs) -> None:
+        """Wrapper to extract data from kwargs and pass to handle_file."""
+        user_data = kwargs.get("user_data", ("", False))
+        await handle_file(message, user_data, download_dir, max_file_size)
+
     dp.message.register(
-        lambda message, user_data, task_manager: handle_file(
-            message, user_data, task_manager, download_dir, max_file_size
-        ),
+        file_handler,
         F.document | F.photo | F.video | F.audio | F.voice | F.animation,
     )

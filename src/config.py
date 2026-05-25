@@ -20,8 +20,8 @@ class Config:
             os.getenv("MAX_FILE_SIZE", str(2 * 1024 * 1024 * 1024))
         )
         self._throttle_rate = float(os.getenv("THROTTLE_RATE", "3.0"))
-        self._max_concurrent_tasks = int(os.getenv("MAX_CONCURRENT_TASKS", "3"))
         self._health_port = int(os.getenv("HEALTH_PORT", "8080"))
+        self._docker_host = os.getenv("DOCKER_HOST", "unix:///var/run/docker.sock")
         self._use_local_api = os.getenv("USE_LOCAL_API", "false").lower() == "true"
         self._local_api_url = os.getenv("LOCAL_API_URL", "http://127.0.0.1:8081")
 
@@ -60,12 +60,12 @@ class Config:
         return self._throttle_rate
 
     @property
-    def max_concurrent_tasks(self) -> int:
-        return self._max_concurrent_tasks
-
-    @property
     def health_port(self) -> int:
         return self._health_port
+
+    @property
+    def docker_host(self) -> str:
+        return self._docker_host
 
     @property
     def use_local_api(self) -> bool:

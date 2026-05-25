@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import gzip
 import logging
+import os
 import re
 import uuid
 from collections.abc import Callable
@@ -10,11 +11,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+# Set DOCKER_HOST before importing docker
+os.environ.setdefault("DOCKER_HOST", "unix:///var/run/docker.sock")
+
 import docker
 from aiogram import F
 from aiogram.types import Message
-
-from src.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +63,7 @@ async def retry_with_backoff(
                 raise last_exception from None
 
 
-def register_text_handlers(dp: Any, download_dir: Path) -> None:
+def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> None:
     """Register text message handlers with the dispatcher."""
 
     async def process_docker_pull(
@@ -70,19 +72,23 @@ def register_text_handlers(dp: Any, download_dir: Path) -> None:
         prefix: str,
         user_id: int,
         download_dir: Path,
+        docker_host: str,
     ) -> None:
         """Background task to download Docker image using Docker SDK."""
+        client = None
         try:
+            logger.info(f"Starting Docker image download for {image_name}")
             await message.reply(f"🐳 Downloading {image_name}...")
 
             # Ensure download directory exists
             download_dir.mkdir(parents=True, exist_ok=True)
 
-            # Connect to Docker daemon
-            client = docker.from_env()
-
             # Pull image with retry
             logger.info(f"Pulling Docker image: {image_name}")
+
+            # Force environment variable
+            os.environ["DOCKER_HOST"] = docker_host
+            client = docker.from_env()
 
             async def pull_with_retry():
                 return await asyncio.to_thread(client.images.pull, image_name)
@@ -102,9 +108,11 @@ def register_text_handlers(dp: Any, download_dir: Path) -> None:
             logger.info(f"Saving image to tar: {tar_filepath}")
 
             async def save_with_retry():
-                await asyncio.to_thread(
-                    save_with_dir_check, client, image_name, tar_filepath, download_dir
-                )
+                download_dir.mkdir(parents=True, exist_ok=True)
+                image = client.images.get(image_name)
+                with open(tar_filepath, "wb") as f:
+                    for chunk in image.save():
+                        f.write(chunk)
 
             await retry_with_backoff(save_with_retry, max_retries=2)
             logger.info(f"Image saved to tar: {tar_filepath}")
@@ -149,33 +157,19 @@ def register_text_handlers(dp: Any, download_dir: Path) -> None:
 
             await message.reply(f"✅ Docker image saved: {gz_filename}")
             logger.info(f"Docker image saved by user {user_id}: {gz_filename}")
-
-            # Close client
-            client.close()
         except Exception as e:
-            logger.error(f"Error processing docker pull for user {user_id}: {e}")
+            logger.error(
+                f"Error processing docker pull for user {user_id}: {e}", exc_info=True
+            )
             await message.reply(f"❌ Failed to download image: {e}")
-
-    def save_with_dir_check(
-        client: docker.DockerClient,
-        image_name: str,
-        output_path: Path,
-        download_dir: Path,
-    ) -> None:
-        """Save Docker image as tar with directory creation check."""
-        # Ensure directory exists (same thread as file operation)
-        download_dir.mkdir(parents=True, exist_ok=True)
-        # Save the image
-        image = client.images.get(image_name)
-        with open(output_path, "wb") as f:
-            for chunk in image.save():
-                f.write(chunk)
+        finally:
+            if client:
+                client.close()
 
     async def handle_text(
         message: Message,
         user_data: tuple[str, ...],
         has_prefix: bool,
-        task_manager: TaskManager,
     ) -> None:
         """Handle text messages - detect docker pull commands."""
         text = message.text.strip()
@@ -185,11 +179,6 @@ def register_text_handlers(dp: Any, download_dir: Path) -> None:
         match = re.match(docker_pull_pattern, text, re.IGNORECASE)
 
         if match:
-            is_admin = user_data[1] if len(user_data) > 1 else False
-            if not has_prefix and not is_admin:
-                await message.answer("❌ Set your prefix first with /set_prefix")
-                return
-
             image_name = match.group(1).strip()
             prefix = user_data[0] or ""
 
@@ -198,14 +187,16 @@ def register_text_handlers(dp: Any, download_dir: Path) -> None:
                 await message.answer("❌ Invalid Docker image name")
                 return
 
-            # Process in background with task queue
-            await task_manager.add_task(
-                user_id=message.from_user.id,
-                task_func=process_docker_pull(
-                    message, image_name, prefix, message.from_user.id, download_dir
-                ),
-                message=message,
-                task_type="Docker image download",
+            # Process in background without task queue
+            asyncio.create_task(
+                process_docker_pull(
+                    message,
+                    image_name,
+                    prefix,
+                    message.from_user.id,
+                    download_dir,
+                    docker_host,
+                )
             )
         else:
             await message.answer("❓ Please send a file or docker pull command.")

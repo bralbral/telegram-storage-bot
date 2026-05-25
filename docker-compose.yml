@@ -3,11 +3,16 @@ services:
     build: .
     container_name: storage-bot
     privileged: true
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - ALL
     restart: unless-stopped
     environment:
       - BOT_TOKEN=${BOT_TOKEN}
       - ADMIN_IDS=${ADMIN_IDS}
       - DOWNLOAD_DIR=/var/lib/downloads
+      - DOCKER_HOST=unix:///var/run/docker.sock
       - USE_LOCAL_API=${USE_LOCAL_API:-false}
       - LOCAL_API_URL=${LOCAL_API_URL:-http://127.0.0.1:8081}
       - HEALTH_PORT=${HEALTH_PORT:-8080}
@@ -15,8 +20,7 @@ services:
       - "${HEALTH_PORT:-8080}:${HEALTH_PORT:-8080}"
     volumes:
       - ./downloads:/var/lib/downloads
-      # Optional: persist user database locally
-      # - ./users.db:/app/users.db
+      - ./users.db:/app/users.db
     env_file:
       - .env
     healthcheck:

@@ -8,7 +8,6 @@ from aiogram.dispatcher.middlewares.base import BaseMiddleware
 from aiogram.types import Message
 
 from src.db.database import Database
-from src.task_manager import TaskManager
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -19,17 +18,15 @@ logger = logging.getLogger(__name__)
 class AccessMiddleware(BaseMiddleware):
     """Middleware that checks user access - admins from config have automatic access."""
 
-    __slots__ = ("db", "task_manager", "admin_ids", "download_dir")
+    __slots__ = ("db", "admin_ids", "download_dir")
 
     def __init__(
         self,
         db: Database,
         admin_ids: list[int] | None = None,
-        task_manager: TaskManager | None = None,
         download_dir: Path | None = None,
     ):
         self.db = db
-        self.task_manager = task_manager
         self.admin_ids = admin_ids or []
         self.download_dir = download_dir
 
@@ -61,13 +58,7 @@ class AccessMiddleware(BaseMiddleware):
             if prefix is None:
                 prefix = ""
 
-            data["user_data"] = (prefix, is_admin)
-            data["has_prefix"] = bool(prefix)
-            data["is_admin"] = is_admin
-            data["db"] = self.db
-            data["task_manager"] = self.task_manager
-            data["download_dir"] = self.download_dir
-
+            # Check if this is a file or docker pull operation
             has_file = any(
                 [
                     event.document,
@@ -79,8 +70,18 @@ class AccessMiddleware(BaseMiddleware):
                 ],
             )
 
-            # Only non-admins need prefix for files
-            if has_file and not data["has_prefix"] and not is_admin:
+            is_docker_pull = False
+            if event.text and event.text.strip().lower().startswith("docker pull"):
+                is_docker_pull = True
+
+            data["user_data"] = (prefix, is_admin)
+            data["has_prefix"] = bool(prefix)
+            data["is_admin"] = is_admin
+            data["db"] = self.db
+            data["download_dir"] = self.download_dir
+
+            # All users need prefix for files and docker pull
+            if (has_file or is_docker_pull) and not data["has_prefix"]:
                 await event.answer("❌ Set your prefix first with /set_prefix")
                 return
 

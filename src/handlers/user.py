@@ -53,6 +53,22 @@ async def cmd_start(message: Message, user_data: tuple) -> None:
         raise
 
 
+async def cmd_my_prefix(message: Message, user_data: tuple) -> None:
+    """Handle /my_prefix command - show current user prefix."""
+    prefix = user_data[0] or ""
+    try:
+        if prefix:
+            await message.answer(f"📝 Your prefix: `{prefix}`")
+        else:
+            await message.answer(
+                "❌ You don't have a prefix set. Use /set_prefix to set one."
+            )
+        logger.info(f"User {message.from_user.id} requested their prefix")
+    except Exception as e:
+        logger.error(f"Failed to send prefix to user {message.from_user.id}: {e}")
+        raise
+
+
 async def cmd_set_prefix(
     message: Message, command: CommandObject, user_data: tuple, db: Database
 ) -> None:
@@ -86,12 +102,14 @@ async def set_commands(bot, admin_ids: list[int] | None = None) -> None:
     # Basic commands for all users
     basic_commands = [
         BotCommand(command="start", description="Start the bot"),
+        BotCommand(command="my_prefix", description="Show your prefix"),
         BotCommand(command="set_prefix", description="Set file prefix (1-10 chars)"),
     ]
 
     # Admin commands (only for admins)
     admin_commands = [
         BotCommand(command="start", description="Start the bot"),
+        BotCommand(command="my_prefix", description="Show your prefix"),
         BotCommand(command="set_prefix", description="Set file prefix (1-10 chars)"),
         BotCommand(command="add_user", description="Add user"),
         BotCommand(command="remove_user", description="Remove user"),

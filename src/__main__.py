@@ -16,7 +16,6 @@ from src.handlers.admin import create_admin_handlers
 from src.health import HealthServer
 from src.middlewares.access import AccessMiddleware
 from src.middlewares.throttle import ThrottleMiddleware
-from src.task_manager import TaskManager
 
 
 # Load environment variables from .env file if it exists (before logging setup)
@@ -50,7 +49,7 @@ logger = logging.getLogger(__name__)
 
 async def setup_bot(
     config: Config,
-) -> tuple[Bot, Dispatcher, HealthServer, Database, TaskManager]:
+) -> tuple[Bot, Dispatcher, HealthServer, Database]:
     """Create and configure bot and dispatcher."""
     bot_token = config.bot_token
     admin_ids = config.admin_ids
@@ -77,15 +76,13 @@ async def setup_bot(
     await user.set_commands(bot, admin_ids)
     dp.message.outer_middleware(ThrottleMiddleware(config.throttle_rate))
 
-    # Initialize task manager
-    task_manager_instance = TaskManager(config.max_concurrent_tasks)
+    # Initialize access middleware
     dp.message.outer_middleware(
-        AccessMiddleware(
-            database, admin_ids, task_manager_instance, config.download_dir
-        )
+        AccessMiddleware(database, admin_ids, config.download_dir)
     )
 
     dp.message.register(user.cmd_start, Command("start"))
+    dp.message.register(user.cmd_my_prefix, Command("my_prefix"))
     dp.message.register(user.cmd_set_prefix, Command("set_prefix"))
 
     cmd_add_user, cmd_remove_user, cmd_list_users, cmd_status = create_admin_handlers(
@@ -97,25 +94,19 @@ async def setup_bot(
     dp.message.register(cmd_status, Command("status"))
 
     files.register_file_handlers(dp, config.download_dir, config.max_file_size)
-    docker.register_text_handlers(dp, config.download_dir)
+    docker.register_text_handlers(dp, config.download_dir, config.docker_host)
 
     # Health check server
     health_server = HealthServer(port=config.health_port)
 
     logger.info(f"Bot configured with {len(admin_ids)} admin(s)")
-    return bot, dp, health_server, database, task_manager_instance
+    return bot, dp, health_server, database
 
 
 async def run_bot() -> None:
     """Run the bot with graceful shutdown."""
     config = Config()
-    bot, dp, health_server, database, task_manager_instance = (
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
+    bot, dp, health_server, database = (None, None, None, None)
     shutdown_event = asyncio.Event()
 
     def signal_handler(signum, frame):
@@ -128,9 +119,7 @@ async def run_bot() -> None:
     signal.signal(signal.SIGINT, signal_handler)
 
     try:
-        bot, dp, health_server, database, task_manager_instance = await setup_bot(
-            config
-        )
+        bot, dp, health_server, database = await setup_bot(config)
         config.download_dir.mkdir(parents=True, exist_ok=True)
 
         # Start health check server
@@ -167,11 +156,7 @@ async def run_bot() -> None:
     finally:
         logger.info("Initiating cleanup...")
         try:
-            # Wait for background tasks to complete with TaskManager
-            logger.info("Waiting for background tasks to complete...")
-            if task_manager_instance:
-                await task_manager_instance.shutdown(timeout=30)
-
+            # Close database
             if database:
                 await database.close()
             if health_server:
