@@ -44,19 +44,20 @@ CMD set -e; \
     which python; \
     python --version; \
     ls -la /app/src/; \
+    rm -f /var/run/docker.pid; \
     echo "Starting Docker daemon..."; \
     dockerd > /tmp/dockerd.log 2>&1 & \
     DOCKERD_PID=$!; \
     echo "Waiting for Docker daemon to be ready (PID: $DOCKERD_PID)..."; \
     for i in $(seq 1 30); do \
-        if docker info > /dev/null 2>&1; then \
+        if (unset DOCKER_HOST; docker info > /dev/null 2>&1); then \
             echo "Docker daemon is ready"; \
             break; \
         fi; \
         echo "Attempt $i: Docker daemon not ready yet"; \
         sleep 1; \
     done; \
-    if ! docker info > /dev/null 2>&1; then \
+    if ! (unset DOCKER_HOST; docker info > /dev/null 2>&1); then \
         echo "Docker daemon failed to start"; \
         cat /tmp/dockerd.log; \
         exit 1; \

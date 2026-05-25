@@ -3,16 +3,12 @@ from __future__ import annotations
 import asyncio
 import gzip
 import logging
-import os
 import re
 import uuid
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-
-# Set DOCKER_HOST before importing docker
-os.environ.setdefault("DOCKER_HOST", "unix:///var/run/docker.sock")
 
 import docker
 from aiogram import F
@@ -84,11 +80,14 @@ def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> Non
             download_dir.mkdir(parents=True, exist_ok=True)
 
             # Pull image with retry
-            logger.info(f"Pulling Docker image: {image_name}")
+            logger.info(
+                f"Pulling Docker image: {image_name} using Docker host: {docker_host}"
+            )
 
-            # Force environment variable
-            os.environ["DOCKER_HOST"] = docker_host
-            client = docker.from_env()
+            # Use explicit base_url for reliable connection
+            client = docker.DockerClient(base_url=docker_host)
+            client.ping()
+            logger.info("Successfully connected to Docker daemon")
 
             async def pull_with_retry():
                 return await asyncio.to_thread(client.images.pull, image_name)

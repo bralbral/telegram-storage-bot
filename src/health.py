@@ -30,7 +30,6 @@ class HealthServer:
         # Check Docker daemon status
         try:
             docker_host = os.getenv("DOCKER_HOST", "unix:///var/run/docker.sock")
-            os.environ["DOCKER_HOST"] = docker_host
             client = docker.DockerClient(base_url=docker_host)
             client.ping()
             health_data["docker"] = {
