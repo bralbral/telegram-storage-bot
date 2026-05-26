@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 import platform
 import re
@@ -12,8 +11,9 @@ from aiogram.types import Message
 
 from src.db.database import Database
 from src.exceptions import ValidationError
+from src.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def validate_prefix(prefix: str) -> None:
@@ -44,7 +44,8 @@ def create_admin_handlers(
         """Admin only: Add a user to the database with optional prefix."""
         if message.from_user.id not in admin_ids:
             logger.warning(
-                f"Unauthorized admin command attempt by user {message.from_user.id}"
+                "Unauthorized admin command attempt",
+                user_id=message.from_user.id,
             )
             return
 
@@ -67,15 +68,20 @@ def create_admin_handlers(
             await message.answer(
                 f"✅ User {telegram_id} added. Prefix: `{prefix or 'none'}`"
             )
-            logger.info(f"Admin {message.from_user.id} added user {telegram_id}")
+            logger.info(
+                "Admin added user",
+                admin_id=message.from_user.id,
+                user_id=telegram_id,
+                prefix=prefix,
+            )
         except (ValueError, IndexError) as e:
             await message.answer(
                 "❌ Invalid format. Use: /add_user <telegram_id> [prefix]"
             )
-            logger.error(f"Invalid add_user command format: {e}")
+            logger.error("Invalid add_user command format", error=str(e))
         except Exception as e:
             await message.answer("❌ Failed to add user")
-            logger.error(f"Failed to add user: {e}")
+            logger.error("Failed to add user", error=str(e))
 
     async def cmd_remove_user(
         message: Message, command: CommandObject, db: Database
@@ -83,7 +89,8 @@ def create_admin_handlers(
         """Admin only: Remove a user from the database."""
         if message.from_user.id not in admin_ids:
             logger.warning(
-                f"Unauthorized admin command attempt by user {message.from_user.id}"
+                "Unauthorized admin command attempt",
+                user_id=message.from_user.id,
             )
             return
 
@@ -95,19 +102,24 @@ def create_admin_handlers(
             telegram_id = int(command.args.strip())
             await db.remove_user(telegram_id)
             await message.answer(f"✅ User {telegram_id} removed.")
-            logger.info(f"Admin {message.from_user.id} removed user {telegram_id}")
+            logger.info(
+                "Admin removed user",
+                admin_id=message.from_user.id,
+                user_id=telegram_id,
+            )
         except ValueError as e:
             await message.answer("❌ Invalid telegram ID format")
-            logger.error(f"Invalid remove_user command format: {e}")
+            logger.error("Invalid remove_user command format", error=str(e))
         except Exception as e:
             await message.answer("❌ Failed to remove user")
-            logger.error(f"Failed to remove user: {e}")
+            logger.error("Failed to remove user", error=str(e))
 
     async def cmd_list_users(message: Message, db: Database) -> None:
         """Admin only: List all users with their prefixes."""
         if message.from_user.id not in admin_ids:
             logger.warning(
-                f"Unauthorized admin command attempt by user {message.from_user.id}"
+                "Unauthorized admin command attempt",
+                user_id=message.from_user.id,
             )
             return
 
@@ -122,16 +134,21 @@ def create_admin_handlers(
             for uid, prefix in users:
                 text += f"✅ {uid} - prefix: `{prefix or 'none'}`\n"
             await message.answer(text)
-            logger.info(f"Admin {message.from_user.id} listed users")
+            logger.info(
+                "Admin listed users",
+                admin_id=message.from_user.id,
+                user_count=len(users),
+            )
         except Exception as e:
             await message.answer("❌ Failed to list users")
-            logger.error(f"Failed to list users: {e}")
+            logger.error("Failed to list users", error=str(e))
 
     async def cmd_status(message: Message, db: Database) -> None:
         """Admin only: Show bot status and system information."""
         if message.from_user.id not in admin_ids:
             logger.warning(
-                f"Unauthorized admin command attempt by user {message.from_user.id}"
+                "Unauthorized admin command attempt",
+                user_id=message.from_user.id,
             )
             return
 
@@ -151,9 +168,12 @@ def create_admin_handlers(
             status_text += f"🌐 **API**: {'Local' if use_local_api else 'Standard'}\n"
 
             await message.answer(status_text, parse_mode="Markdown")
-            logger.info(f"Admin {message.from_user.id} requested status")
+            logger.info(
+                "Admin requested status",
+                admin_id=message.from_user.id,
+            )
         except Exception as e:
             await message.answer("❌ Failed to get status")
-            logger.error(f"Failed to get status: {e}")
+            logger.error("Failed to get status", error=str(e))
 
     return (cmd_add_user, cmd_remove_user, cmd_list_users, cmd_status)

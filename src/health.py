@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import logging
 import os
 
 import docker
 from aiohttp import web
 
-logger = logging.getLogger(__name__)
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class HealthServer:
@@ -48,7 +49,7 @@ class HealthServer:
         await self.runner.setup()
         self.site = web.TCPSite(self.runner, self.host, self.port)
         await self.site.start()
-        logger.info(f"Health check server started on {self.host}:{self.port}")
+        logger.info("Health check server started", host=self.host, port=self.port)
 
     async def stop(self) -> None:
         """Stop the health check server."""

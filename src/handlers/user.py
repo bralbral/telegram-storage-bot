@@ -1,4 +1,3 @@
-import logging
 import re
 
 from aiogram.filters import CommandObject
@@ -11,8 +10,9 @@ from aiogram.types import (
 
 from src.db.database import Database
 from src.exceptions import ValidationError
+from src.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def is_valid_prefix(prefix: str) -> bool:
@@ -45,10 +45,12 @@ async def cmd_start(message: Message, user_data: tuple) -> None:
             "Send files to save them as gzip\n"
             "Use /set_prefix to set your file prefix"
         )
-        logger.info(f"User {message.from_user.id} started bot")
+        logger.info("User started bot", user_id=message.from_user.id)
     except Exception as e:
         logger.error(
-            f"Failed to send start message to user {message.from_user.id}: {e}"
+            "Failed to send start message",
+            user_id=message.from_user.id,
+            error=str(e),
         )
         raise
 
@@ -63,9 +65,13 @@ async def cmd_my_prefix(message: Message, user_data: tuple) -> None:
             await message.answer(
                 "❌ You don't have a prefix set. Use /set_prefix to set one."
             )
-        logger.info(f"User {message.from_user.id} requested their prefix")
+        logger.info("User requested their prefix", user_id=message.from_user.id)
     except Exception as e:
-        logger.error(f"Failed to send prefix to user {message.from_user.id}: {e}")
+        logger.error(
+            "Failed to send prefix",
+            user_id=message.from_user.id,
+            error=str(e),
+        )
         raise
 
 
@@ -89,9 +95,17 @@ async def cmd_set_prefix(
     try:
         await db.set_prefix(message.from_user.id, prefix)
         await message.answer(f"✅ Prefix set to: `{prefix}`")
-        logger.info(f"User {message.from_user.id} set prefix to '{prefix}'")
+        logger.info(
+            "User set prefix",
+            user_id=message.from_user.id,
+            prefix=prefix,
+        )
     except Exception as e:
-        logger.error(f"Failed to set prefix for user {message.from_user.id}: {e}")
+        logger.error(
+            "Failed to set prefix",
+            user_id=message.from_user.id,
+            error=str(e),
+        )
         await message.answer("❌ Failed to set prefix. Please try again.")
 
 
@@ -129,7 +143,7 @@ async def set_commands(bot, admin_ids: list[int] | None = None) -> None:
             await bot.set_my_commands(
                 admin_commands, scope=BotCommandScopeChat(chat_id=admin_id)
             )
-        logger.info(f"Admin commands set for {len(admin_ids)} admin(s)")
+        logger.info("Admin commands set", admin_count=len(admin_ids))
     except Exception as e:
-        logger.error(f"Failed to set bot commands: {e}")
+        logger.error("Failed to set bot commands", error=str(e))
         raise

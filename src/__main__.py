@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import signal
 from pathlib import Path
@@ -14,6 +13,7 @@ from src.db.database import Database
 from src.handlers import docker, files, user
 from src.handlers.admin import create_admin_handlers
 from src.health import HealthServer
+from src.logging_config import configure_logging, get_logger
 from src.middlewares.access import AccessMiddleware
 from src.middlewares.throttle import ThrottleMiddleware
 
@@ -40,11 +40,9 @@ def load_env_file() -> None:
 
 load_env_file()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Configure structlog
+configure_logging(log_level=os.getenv("LOG_LEVEL", "INFO"))
+logger = get_logger(__name__)
 
 
 async def setup_bot(

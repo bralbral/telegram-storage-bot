@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
 import aiosqlite
 
 from src.exceptions import DatabaseError
+from src.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class Database:
@@ -43,7 +43,7 @@ class Database:
             await db.commit()
             logger.info("Database initialized successfully")
         except aiosqlite.Error as e:
-            logger.error(f"Database initialization failed: {e}")
+            logger.error("Database initialization failed", error=str(e))
             raise DatabaseError(f"Failed to initialize database: {e}") from e
 
     async def get_user(self, telegram_id: int) -> str | None:
@@ -64,7 +64,7 @@ class Database:
             result = await cursor.fetchone()
             return result[0] if result else None
         except aiosqlite.Error as e:
-            logger.error(f"Failed to get user {telegram_id}: {e}")
+            logger.error("Failed to get user", telegram_id=telegram_id, error=str(e))
             raise DatabaseError(f"Failed to get user {telegram_id}: {e}") from e
 
     async def add_user(self, telegram_id: int, prefix: str = "") -> None:
@@ -84,9 +84,9 @@ class Database:
                 (telegram_id, prefix),
             )
             await db.commit()
-            logger.info(f"User {telegram_id} added with prefix '{prefix}'")
+            logger.info("User added", telegram_id=telegram_id, prefix=prefix)
         except aiosqlite.Error as e:
-            logger.error(f"Failed to add user {telegram_id}: {e}")
+            logger.error("Failed to add user", telegram_id=telegram_id, error=str(e))
             raise DatabaseError(f"Failed to add user {telegram_id}: {e}") from e
 
     async def set_prefix(self, telegram_id: int, prefix: str) -> None:
@@ -106,9 +106,9 @@ class Database:
                 (prefix, telegram_id),
             )
             await db.commit()
-            logger.info(f"Prefix updated for user {telegram_id}: '{prefix}'")
+            logger.info("Prefix updated", telegram_id=telegram_id, prefix=prefix)
         except aiosqlite.Error as e:
-            logger.error(f"Failed to set prefix for user {telegram_id}: {e}")
+            logger.error("Failed to set prefix", telegram_id=telegram_id, error=str(e))
             raise DatabaseError(
                 f"Failed to set prefix for user {telegram_id}: {e}"
             ) from e
@@ -126,9 +126,9 @@ class Database:
             db = await self._get_connection()
             await db.execute("DELETE FROM users WHERE telegram_id = ?", (telegram_id,))
             await db.commit()
-            logger.info(f"User {telegram_id} removed")
+            logger.info("User removed", telegram_id=telegram_id)
         except aiosqlite.Error as e:
-            logger.error(f"Failed to remove user {telegram_id}: {e}")
+            logger.error("Failed to remove user", telegram_id=telegram_id, error=str(e))
             raise DatabaseError(f"Failed to remove user {telegram_id}: {e}") from e
 
     async def get_all_users(self) -> list[tuple[int, str | None]]:
@@ -142,7 +142,7 @@ class Database:
             cursor = await db.execute("SELECT telegram_id, prefix FROM users")
             return await cursor.fetchall()
         except aiosqlite.Error as e:
-            logger.error(f"Failed to get all users: {e}")
+            logger.error("Failed to get all users", error=str(e))
             raise DatabaseError(f"Failed to get all users: {e}") from e
 
     async def close(self) -> None:

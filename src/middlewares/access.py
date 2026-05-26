@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -8,11 +7,12 @@ from aiogram.dispatcher.middlewares.base import BaseMiddleware
 from aiogram.types import Message
 
 from src.db.database import Database
+from src.logging_config import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AccessMiddleware(BaseMiddleware):
@@ -46,12 +46,12 @@ class AccessMiddleware(BaseMiddleware):
             # Auto-add admins to DB if not present
             if is_admin and prefix is None:
                 await self.db.add_user(user_id, "")
-                logger.info(f"Admin {user_id} auto-added to database")
+                logger.info("Admin auto-added to database", user_id=user_id)
                 prefix = ""
 
             # Regular users must be in DB
             if not is_admin and prefix is None:
-                logger.debug(f"Access denied for user {user_id}: not in database")
+                logger.debug("Access denied: user not in database", user_id=user_id)
                 return
 
             # If prefix is still None (shouldn't happen), use empty string
@@ -87,5 +87,5 @@ class AccessMiddleware(BaseMiddleware):
 
             return await handler(event, data)
         except Exception as e:
-            logger.error(f"Error in access middleware for user {user_id}: {e}")
+            logger.error("Error in access middleware", user_id=user_id, error=str(e))
             return

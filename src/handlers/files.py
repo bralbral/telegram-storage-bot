@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from pathlib import Path
 from typing import Any
 
@@ -9,9 +8,10 @@ from aiogram import F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import Message
 
+from src.logging_config import get_logger
 from src.utils.file_utils import save_file_direct_streaming, save_file_gzip_streaming
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 COMPRESSED_EXTENSIONS = {
     ".gz",
@@ -53,7 +53,7 @@ async def process_file_in_background(
     """Background task to compress and save file using streaming."""
     try:
         if is_already_compressed(original_filename):
-            logger.info(f"File already compressed: {original_filename}")
+            logger.info("File already compressed", filename=original_filename)
             filename = await save_file_direct_streaming(
                 source_path, prefix, download_dir, original_filename
             )
@@ -62,9 +62,9 @@ async def process_file_in_background(
                 source_path, prefix, download_dir, original_filename
             )
         await message.reply(f"✅ File saved: {filename}")
-        logger.info(f"File saved by user {user_id}: {filename}")
+        logger.info("File saved", user_id=user_id, filename=filename)
     except Exception as e:
-        logger.error(f"Background processing failed for user {user_id}: {e}")
+        logger.error("Background processing failed", user_id=user_id, error=str(e))
         await message.reply("❌ Failed to save file")
     finally:
         # Clean up temp file
@@ -113,7 +113,9 @@ async def handle_file(
         # Check file size limit
         if file_size and file_size > max_file_size:
             logger.info(
-                f"File too large for user {message.from_user.id}: {file_size} bytes"
+                "File too large",
+                user_id=message.from_user.id,
+                file_size=file_size,
             )
             await message.reply(
                 f"❌ File too large. Maximum size is {max_file_size / (1024 * 1024 * 1024):.1f}GB."
@@ -144,16 +146,25 @@ async def handle_file(
             )
         except TelegramBadRequest as e:
             logger.error(
-                f"Telegram API error for file {file_id} from user {message.from_user.id}: {e}"
+                "Telegram API error",
+                file_id=file_id,
+                user_id=message.from_user.id,
+                error=str(e),
             )
             await message.reply("❌ File not available or too large")
         except FileNotFoundError as e:
             logger.error(
-                f"File not found after download for user {message.from_user.id}: {e}"
+                "File not found after download",
+                user_id=message.from_user.id,
+                error=str(e),
             )
             await message.reply("❌ Failed to process downloaded file")
         except Exception as e:
-            logger.error(f"Error handling file from user {message.from_user.id}: {e}")
+            logger.error(
+                "Error handling file",
+                user_id=message.from_user.id,
+                error=str(e),
+            )
             await message.reply("❌ Failed to process file")
 
 

@@ -72,7 +72,7 @@ docker run -d \
 | `DB_PATH` | No | ./users.db | Database file path |
 | `MAX_FILE_SIZE` | No | 2147483648 (2GB) | Maximum file size in bytes |
 | `THROTTLE_RATE` | No | 3.0 | Throttle rate in seconds |
-| `MAX_CONCURRENT_TASKS` | No | 3 | Max concurrent background tasks |
+| `LOG_LEVEL` | No | INFO | Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
 | `HEALTH_PORT` | No | 8080 | Health check server port |
 | `DOCKER_HOST` | No | unix:///var/run/docker.sock | Docker daemon socket URL |
 | `USE_LOCAL_API` | No | false | Enable local Bot API for large files |

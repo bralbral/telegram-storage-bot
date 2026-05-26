@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import gzip
-import logging
 import re
 import uuid
 from datetime import datetime
@@ -13,7 +12,9 @@ import docker
 from aiogram import F
 from aiogram.types import Message
 
-logger = logging.getLogger(__name__)
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> None:
@@ -37,7 +38,11 @@ def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> Non
         """
         client = None
         try:
-            logger.info(f"Starting Docker image download for {image_name}")
+            logger.info(
+                "Starting Docker image download",
+                image_name=image_name,
+                user_id=user_id,
+            )
 
             # Ensure download directory exists
             download_dir.mkdir(parents=True, exist_ok=True)
@@ -45,12 +50,14 @@ def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> Non
             # Use explicit base_url for reliable connection
             client = docker.DockerClient(base_url=docker_host)
             client.ping()
-            logger.info("Successfully connected to Docker daemon")
+            logger.info(
+                "Successfully connected to Docker daemon", docker_host=docker_host
+            )
 
             # Pull image with retry
-            logger.info(f"Pulling Docker image: {image_name}")
+            logger.info("Pulling Docker image", image=image_name)
             client.images.pull(image_name)
-            logger.info(f"Image pulled successfully: {image_name}")
+            logger.info("Image pulled successfully", image=image_name)
 
             # Generate filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -61,21 +68,21 @@ def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> Non
             tar_filepath = download_dir / tar_filename
 
             # Save image as tar
-            logger.info(f"Saving image to tar: {tar_filepath}")
+            logger.info("Saving image to tar", tar_filename=tar_filename)
             download_dir.mkdir(parents=True, exist_ok=True)
             image = client.images.get(image_name)
             with open(tar_filepath, "wb") as f:
                 for chunk in image.save():
                     f.write(chunk)
-            logger.info(f"Image saved to tar: {tar_filepath}")
+            logger.info("Image saved to tar", tar_filepath=str(tar_filepath))
 
             # Verify tar file exists
             if not tar_filepath.exists():
-                logger.error(f"Tar file was not created: {tar_filepath}")
+                logger.error("Tar file was not created", tar_filepath=str(tar_filepath))
                 raise RuntimeError(f"Tar file was not created: {tar_filepath}")
 
             # Compress to gz using gzip.compress
-            logger.info("Compressing tar file to gzip")
+            logger.info("Compressing tar file to gzip", tar_filename=tar_filename)
             gz_filename = f"{tar_filename}.gz"
             gz_filepath: Path = download_dir / gz_filename
 
@@ -87,21 +94,28 @@ def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> Non
 
             # Clean up original tar file
             tar_filepath.unlink()
-            logger.info("Original tar file deleted")
+            logger.info("Original tar file deleted", tar_filename=tar_filename)
 
             # Remove Docker image to save space
-            logger.info(f"Removing Docker image: {image_name}")
+            logger.info("Removing Docker image", image_name=image_name)
             try:
                 client.images.remove(image_name, force=True)
-                logger.info(f"Image removed successfully: {image_name}")
+                logger.info("Image removed successfully", image=image_name)
             except Exception as e:
-                logger.warning(f"Failed to remove image {image_name}: {e}")
+                logger.warning("Failed to remove image", image=image_name, error=str(e))
 
-            logger.info(f"Docker image saved by user {user_id}: {gz_filename}")
+            logger.info(
+                "Docker image saved successfully",
+                user_id=user_id,
+                filename=gz_filename,
+            )
             return gz_filename
         except Exception as e:
             logger.error(
-                f"Error processing docker pull for user {user_id}: {e}", exc_info=True
+                "Error processing docker pull",
+                user_id=user_id,
+                error=str(e),
+                exc_info=True,
             )
             raise
         finally:
@@ -129,8 +143,20 @@ def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> Non
                 docker_host,
             )
             await message.reply(f"✅ Docker image saved: {gz_filename}")
+            await logger.ainfo(
+                "Docker image saved successfully",
+                image_name=image_name,
+                user_id=user_id,
+                filename=gz_filename,
+            )
         except Exception as e:
-            logger.error(f"Error in async wrapper: {e}", exc_info=True)
+            await logger.aerror(
+                "Error in async wrapper for docker pull",
+                image_name=image_name,
+                user_id=user_id,
+                error=str(e),
+                exc_info=True,
+            )
             await message.reply(f"❌ Failed to download image: {e}")
         finally:
             return None
@@ -157,7 +183,9 @@ def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> Non
                 return
 
             logger.info(
-                f"Processing docker pull: {image_name} with docker_host={docker_host}"
+                "Processing docker pull",
+                image_name=image_name,
+                docker_host=docker_host,
             )
 
             # Process in background without task queue

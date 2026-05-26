@@ -1,10 +1,11 @@
 import gzip
-import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 async def save_file_gzip(
@@ -44,10 +45,12 @@ async def save_file_gzip(
             )
             gzip_file.write(file_content)
             gzip_file.close()
-        logger.info(f"File saved: {filename} (inside: {original_filename})")
+        logger.info(
+            "File saved", filename=filename, original_filename=original_filename
+        )
         return filename
     except OSError as e:
-        logger.error(f"Failed to save file {filename}: {e}")
+        logger.error("Failed to save file", filename=filename, error=str(e))
         raise
 
 
@@ -91,10 +94,12 @@ async def save_file_gzip_streaming(
                         if not chunk:
                             break
                         gzip_file.write(chunk)
-        logger.info(f"File saved: {filename} (inside: {original_filename})")
+        logger.info(
+            "File saved", filename=filename, original_filename=original_filename
+        )
         return filename
     except OSError as e:
-        logger.error(f"Failed to save file {filename}: {e}")
+        logger.error("Failed to save file", filename=filename, error=str(e))
         raise
 
 
@@ -137,10 +142,12 @@ async def save_file_direct(
     try:
         with open(filepath, "wb") as f:
             f.write(file_content)
-        logger.info(f"File saved: {filename} (original: {original_filename})")
+        logger.info(
+            "File saved", filename=filename, original_filename=original_filename
+        )
         return filename
     except OSError as e:
-        logger.error(f"Failed to save file {filename}: {e}")
+        logger.error("Failed to save file", filename=filename, error=str(e))
         raise
 
 
@@ -190,8 +197,10 @@ async def save_file_direct_streaming(
                     if not chunk:
                         break
                     f_out.write(chunk)
-        logger.info(f"File saved: {filename} (original: {original_filename})")
+        logger.info(
+            "File saved", filename=filename, original_filename=original_filename
+        )
         return filename
     except OSError as e:
-        logger.error(f"Failed to save file {filename}: {e}")
+        logger.error("Failed to save file", filename=filename, error=str(e))
         raise

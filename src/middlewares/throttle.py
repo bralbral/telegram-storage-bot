@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import time
 from collections.abc import Awaitable
 from typing import Any, Callable
@@ -8,7 +7,9 @@ from typing import Any, Callable
 from aiogram.dispatcher.middlewares.base import BaseMiddleware
 from aiogram.types import Message
 
-logger = logging.getLogger(__name__)
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class ThrottleMiddleware(BaseMiddleware):
@@ -37,7 +38,9 @@ class ThrottleMiddleware(BaseMiddleware):
             if time_since_last < self.rate:
                 remaining_time = self.rate - time_since_last
                 logger.debug(
-                    f"Rate limit exceeded for user {user_id}. Wait {remaining_time:.1f}s"
+                    "Rate limit exceeded",
+                    user_id=user_id,
+                    wait_time=f"{remaining_time:.1f}s",
                 )
                 # Inform user about rate limit
                 await event.answer(
@@ -49,6 +52,6 @@ class ThrottleMiddleware(BaseMiddleware):
             self.user_last_action[user_id] = current_time
             return await handler(event, data)
         except Exception as e:
-            logger.error(f"Error in throttle middleware for user {user_id}: {e}")
+            logger.error("Error in throttle middleware", user_id=user_id, error=str(e))
             # On error, allow the action to avoid blocking legitimate users
             return await handler(event, data)
