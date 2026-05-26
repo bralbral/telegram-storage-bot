@@ -17,7 +17,8 @@ Telegram bot for saving files and Docker images to disk with gzip compression. F
 │   ├── middlewares/     # Access control & rate limiting
 │   ├── health.py        # Health check server
 │   └── utils/           # File utilities
-└── downloads/           # Saved files
+├── downloads/           # Saved files
+└── telegram-api-data/   # Telegram Bot API data files
 ```
 
 ## Quick Start
@@ -46,9 +47,14 @@ python -m src
 
 ```bash
 cp .env.example .env
-# Edit .env with your values
+# Edit .env with your values:
+# - BOT_TOKEN from @BotFather
+# - ADMIN_IDS (your Telegram ID)
+# - TELEGRAM_API_ID and TELEGRAM_API_HASH from https://my.telegram.org (for local Bot API)
 docker compose up -d
 ```
+
+The bot includes a local Telegram Bot API server for downloading files larger than 20MB. Get your API credentials from https://my.telegram.org.
 
 #### Using Docker CLI
 
@@ -97,8 +103,32 @@ docker logs storage-bot -f
 | `LOG_LEVEL` | No | INFO | Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
 | `HEALTH_PORT` | No | 8080 | Health check server port |
 | `DOCKER_HOST` | No | unix:///var/run/docker.sock | Docker daemon socket URL |
-| `USE_LOCAL_API` | No | false | Enable local Bot API for large files |
-| `LOCAL_API_URL` | No | http://127.0.0.1:8081 | Local Bot API server URL |
+| `TELEGRAM_API_ID` | Yes (for local API) | - | Telegram API ID from https://my.telegram.org |
+| `TELEGRAM_API_HASH` | Yes (for local API) | - | Telegram API Hash from https://my.telegram.org |
+| `USE_LOCAL_API` | No | true | Enable local Bot API for large files (>20MB) |
+| `LOCAL_API_URL` | No | http://telegram-bot-api:8081 | Local Bot API server URL (internal Docker network) |
+
+## Local Telegram Bot API
+
+The bot includes a local Telegram Bot API server for downloading files larger than 20MB. The local API server runs in a separate container and is automatically configured in Docker Compose.
+
+### Setup
+
+1. Get API credentials from https://my.telegram.org
+2. Add `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` to your `.env` file
+3. Set `USE_LOCAL_API=true` (default)
+4. Start with Docker Compose
+
+### Access
+
+- **Internal Docker network**: `http://telegram-bot-api:8081` (used by storage-bot)
+- **Data directory**: `./telegram-api-data` (on host machine, accessible for backup/inspection)
+
+The local API server provides:
+- Support for files up to 2GB
+- Better performance for large files
+- Reduced dependency on Telegram's servers
+- Data persistence via host volume mapping
 
 ## Access Control
 
