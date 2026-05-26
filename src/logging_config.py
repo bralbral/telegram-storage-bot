@@ -15,6 +15,20 @@ def configure_logging(log_level: str = "INFO") -> None:
     # Convert string level to logging constant
     numeric_level = getattr(logging, log_level.upper(), logging.INFO)
 
+    # Configure stdlib logging to output to stdout
+    logging.basicConfig(
+        format="%(message)s",
+        stream=sys.stdout,
+        level=numeric_level,
+        force=True,  # Override any existing configuration
+    )
+
+    # Silence aiogram and other third-party library logs
+    logging.getLogger("aiogram").setLevel(logging.WARNING)
+    logging.getLogger("aiohttp").setLevel(logging.WARNING)
+    logging.getLogger("aiohttp.access").setLevel(logging.CRITICAL)  # Silence access logs
+    logging.getLogger("asyncio").setLevel(logging.WARNING)
+
     # Configure structlog with stdlib integration
     structlog.configure(
         processors=[
@@ -26,9 +40,8 @@ def configure_logging(log_level: str = "INFO") -> None:
             structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S", utc=False),
             # Handle exceptions
             structlog.processors.StackInfoRenderer(),
-            # If in development, use ConsoleRenderer, otherwise JSON
-            structlog.dev.ConsoleRenderer() if log_level.upper() == "DEBUG"
-            else structlog.processors.JSONRenderer(),
+            # Use ConsoleRenderer for readable console output
+            structlog.dev.ConsoleRenderer(),
         ],
         # Use stdlib integration for better compatibility
         wrapper_class=structlog.make_filtering_bound_logger(numeric_level),

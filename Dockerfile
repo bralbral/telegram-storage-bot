@@ -29,7 +29,9 @@ ENV DOWNLOAD_DIR="/var/lib/downloads"
 ENV DOCKER_HOST=unix:///var/run/docker.sock
 ENV LOG_LEVEL="INFO"
 ENV HEALTH_PORT="8080"
+ENV PYTHONUNBUFFERED=1
 
 # Start Docker daemon using official entrypoint, then run the bot
 # dockerd-entrypoint.sh already sets up Docker daemon correctly
+# dockerd logs redirected to file to keep only application logs in docker logs
 CMD ["dockerd-entrypoint.sh", "sh", "-c", "dockerd >/var/log/dockerd.log 2>&1 & sleep 5 && python -m src"]
