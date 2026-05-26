@@ -1,6 +1,6 @@
 # Telegram Storage Bot
 
-Telegram bot for saving files and Docker images to disk with gzip compression.
+Telegram bot for saving files and Docker images to disk with gzip compression. Features Docker-in-Docker support with structured logging and health monitoring.
 
 ## Project Structure
 
@@ -11,9 +11,11 @@ Telegram bot for saving files and Docker images to disk with gzip compression.
 ├── docker-compose.yml   # Docker Compose configuration
 ├── src/
 │   ├── __main__.py      # Entry point
+│   ├── logging_config.py # Structured logging configuration
 │   ├── handlers/        # Command handlers
 │   ├── db/              # SQLite database
 │   ├── middlewares/     # Access control & rate limiting
+│   ├── health.py        # Health check server
 │   └── utils/           # File utilities
 └── downloads/           # Saved files
 ```
@@ -60,7 +62,27 @@ docker run -d \
   storage-bot
 ```
 
-**Note**: Docker-in-Docker requires `--privileged` flag. The Docker daemon runs inside the container, and images are automatically deleted after export to save space.
+**Note**: Docker-in-Docker requires `--privileged` flag. The bot uses the official `docker:dind` image for reliable Docker-in-Docker support. Images are automatically deleted after export to save space.
+
+### Health Check
+
+The bot includes a health check endpoint for monitoring:
+```bash
+curl http://localhost:8080/health
+```
+
+Returns JSON with bot and Docker daemon status. Docker Compose includes automatic health checks.
+
+### Logs
+
+The bot uses structured logging with readable console output:
+```bash
+docker logs storage-bot -f
+```
+
+- Application logs are clean and readable (no aiogram/aiohttp noise)
+- Docker daemon logs are redirected to `/var/log/dockerd.log` inside container
+- Log level can be controlled via `LOG_LEVEL` environment variable
 
 ## Environment Variables
 
@@ -87,16 +109,19 @@ docker run -d \
 
 - **Send files** → saved as gzip with original filename preserved inside (max 2GB)
   - Already compressed files (.gz, .zip, .rar, .7z, .tar, etc.) saved without additional compression
+  - Files are named with user prefix if set (e.g., `user_prefix_filename.tar.gz`)
 - **Send `docker pull <image>`** → downloads and saves Docker image as gz
+  - Docker image is automatically removed after export to save space
 
 ## Commands
 
 ### Admin (visible only to admins)
-- `/add_user <id> [prefix]` - Add user
+- `/add_user <id> [prefix]` - Add user (prefix is optional, 1-10 latin alphanumeric chars if provided)
 - `/remove_user <id>` - Remove user
 - `/list_users` - List all users
-- `/status` - Bot status
+- `/status` - Bot status and system information
 
 ### User (visible to everyone)
 - `/start` - Show greeting
-- `/set_prefix <prefix>` - Set file prefix (1-5 chars)
+- `/my_prefix` - Show your current prefix
+- `/set_prefix <prefix>` - Set file prefix (1-10 latin alphanumeric characters)
