@@ -125,6 +125,7 @@ The bot includes a local Telegram Bot API server for downloading files larger th
 - **Data directory**: `./telegram-api-data` (on host machine, accessible for backup/inspection)
 
 The local API server provides:
+
 - Support for files up to 2GB
 - Better performance for large files
 - Reduced dependency on Telegram's servers

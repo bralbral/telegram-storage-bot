@@ -21,14 +21,7 @@ COPY src/ ./src/
 RUN mkdir -p /var/lib/downloads
 
 # Environment variables
-ENV BOT_TOKEN=""
-ENV ADMIN_IDS=""
-ENV USE_LOCAL_API="false"
-ENV LOCAL_API_URL="http://127.0.0.1:8081"
-ENV DOWNLOAD_DIR="/var/lib/downloads"
 ENV DOCKER_HOST=unix:///var/run/docker.sock
-ENV LOG_LEVEL="INFO"
-ENV HEALTH_PORT="8080"
 ENV PYTHONUNBUFFERED=1
 
 # Start Docker daemon using official entrypoint, then run the bot

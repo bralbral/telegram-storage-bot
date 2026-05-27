@@ -26,7 +26,9 @@ def configure_logging(log_level: str = "INFO") -> None:
     # Silence aiogram and other third-party library logs
     logging.getLogger("aiogram").setLevel(logging.WARNING)
     logging.getLogger("aiohttp").setLevel(logging.WARNING)
-    logging.getLogger("aiohttp.access").setLevel(logging.CRITICAL)  # Silence access logs
+    logging.getLogger("aiohttp.access").setLevel(
+        logging.CRITICAL
+    )  # Silence access logs
     logging.getLogger("asyncio").setLevel(logging.WARNING)
 
     # Configure structlog with stdlib integration

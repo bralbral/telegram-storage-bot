@@ -6,6 +6,8 @@ import signal
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.session.base import TelegramAPIServer
 from aiogram.filters import Command
 
 from src.config import Config
@@ -59,7 +61,9 @@ async def setup_bot(
     if config.use_local_api:
         bot = Bot(
             token=bot_token,
-            api_server_url=config.local_api_url,
+            session=AiohttpSession(
+                api=TelegramAPIServer.from_base(config.local_api_url, is_local=True)
+            ),
         )
         logger.info("Using local Bot API server")
     else:

@@ -8,8 +8,14 @@ services:
       - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
       - TELEGRAM_LOCAL=true
     volumes:
-      - /var/lib/telegram-bot-api:/var/lib/telegram-bot-api
-    command: ["sh", "-c", "chmod -R a+rX /var/lib/telegram-bot-api && telegram-bot-api --local --dir /var/lib/telegram-bot-api --temp-dir /tmp"]
+      - ./telegram-local-api:/telegram-local-api
+    command:
+      --http-port 8081
+      --http-stat-port 8082
+      --local
+      --dir /telegram-local-api
+      --log-max-file-size 104857600
+      --verbosity 3
     healthcheck:
       test: ["CMD", "sh", "-c", "netstat -tlnp | grep :8081 || exit 1"]
       interval: 30s
@@ -29,7 +35,6 @@ services:
     environment:
       - BOT_TOKEN=${BOT_TOKEN}
       - ADMIN_IDS=${ADMIN_IDS}
-      - DOWNLOAD_DIR=/var/lib/telegram-bot-api
       - DOCKER_HOST=unix:///var/run/docker.sock
       - USE_LOCAL_API=${USE_LOCAL_API:-true}
       - LOCAL_API_URL=${LOCAL_API_URL:-http://telegram-bot-api:8081}
@@ -37,7 +42,8 @@ services:
     ports:
       - "${HEALTH_PORT:-8080}:${HEALTH_PORT:-8080}"
     volumes:
-      - /var/lib/telegram-bot-api:/var/lib/telegram-bot-api
+      - ./telegram-local-api:/telegram-local-api:ro
+      - ./downloads:/downloads
       - ./users.db:/app/users.db
     depends_on:
       telegram-bot-api:

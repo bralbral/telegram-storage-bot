@@ -11,3 +11,4 @@ venv/
 .venv/
 .mypy_cache/
 .ruff_cache/
+telegram-local-api/

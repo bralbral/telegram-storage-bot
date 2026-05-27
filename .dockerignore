@@ -14,7 +14,7 @@ downloads
 users.db
 users.db-shm
 users.db-wal
-telegram-api-data
+telegram-local-api/
 config.yaml
 .env.example
 .mypy_cache
