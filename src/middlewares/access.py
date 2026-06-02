@@ -18,17 +18,19 @@ logger = get_logger(__name__)
 class AccessMiddleware(BaseMiddleware):
     """Middleware that checks user access - admins from config have automatic access."""
 
-    __slots__ = ("db", "admin_ids", "download_dir")
+    __slots__ = ("db", "admin_ids", "download_dir", "bot")
 
     def __init__(
         self,
         db: Database,
         admin_ids: list[int] | None = None,
         download_dir: Path | None = None,
+        bot=None,
     ):
         self.db = db
         self.admin_ids = admin_ids or []
         self.download_dir = download_dir
+        self.bot = bot
 
     async def __call__(
         self,
@@ -79,6 +81,8 @@ class AccessMiddleware(BaseMiddleware):
             data["is_admin"] = is_admin
             data["db"] = self.db
             data["download_dir"] = self.download_dir
+            data["bot"] = self.bot
+            data["admin_ids"] = self.admin_ids
 
             # All users need prefix for files and docker pull
             if (has_file or is_docker_pull) and not data["has_prefix"]:

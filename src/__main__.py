@@ -80,7 +80,7 @@ async def setup_bot(
 
     # Initialize access middleware
     dp.message.outer_middleware(
-        AccessMiddleware(database, admin_ids, config.download_dir)
+        AccessMiddleware(database, admin_ids, config.download_dir, bot)
     )
 
     dp.message.register(user.cmd_start, Command("start"))
