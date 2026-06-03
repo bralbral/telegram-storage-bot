@@ -142,9 +142,14 @@ The local API server provides:
 
 ## Usage
 
-- **Send files** → saved as gzip with original filename preserved inside (max 2GB)
+- **Send files** → added to buffer (use /drop to save as archive)
+  - Files are stored in memory buffer until /drop command
+  - Use /buffer to view files in buffer
+  - Use /drop to save all files as tar.gz archive
+  - Use /clear to empty buffer
+  - Image format is auto-detected (jpg, png, gif, webp, etc.)
   - Already compressed files (.gz, .zip, .rar, .7z, .tar, etc.) saved without additional compression
-  - Files are named with user prefix if set (e.g., `user_prefix_filename.tar.gz`)
+  - Files are named with user prefix if set (e.g., `user_prefix_timestamp_uuid.tar.gz`)
 - **Send `docker pull <image>`** → downloads and saves Docker image as gz
   - Docker image is automatically removed after export to save space
 
@@ -160,3 +165,6 @@ The local API server provides:
 - `/start` - Show greeting
 - `/my_prefix` - Show your current prefix
 - `/set_prefix <prefix>` - Set file prefix (1-10 latin alphanumeric characters)
+- `/buffer` - View files in buffer with sizes
+- `/drop` - Save all files from buffer as tar.gz archive
+- `/clear` - Clear buffer

@@ -7,19 +7,21 @@ from typing import Any, Callable
 from aiogram.dispatcher.middlewares.base import BaseMiddleware
 from aiogram.types import Message
 
+from src.db.database import Database
 from src.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 
 class ThrottleMiddleware(BaseMiddleware):
-    """Rate limiting middleware - limits actions per user."""
+    """Rate limiting middleware - limits actions only for users not in database."""
 
-    __slots__ = ("rate", "user_last_action")
+    __slots__ = ("rate", "user_last_action", "db")
 
-    def __init__(self, rate: float):
+    def __init__(self, rate: float, db: Database | None = None):
         self.rate = rate
         self.user_last_action: dict[int, float] = {}
+        self.db = db
 
     async def __call__(
         self,
@@ -27,11 +29,26 @@ class ThrottleMiddleware(BaseMiddleware):
         event: Message,
         data: dict[str, Any],
     ) -> Any:
-        """Enforce rate limiting per user."""
+        """Enforce rate limiting only for users not in database."""
         user_id = event.from_user.id
         current_time = time.time()
 
         try:
+            # Skip throttling if user is in database
+            if self.db:
+                try:
+                    user_data = await self.db.get_user(user_id)
+                    if user_data:
+                        # User is in database, no throttling
+                        return await handler(event, data)
+                except Exception as e:
+                    logger.warning(
+                        "Failed to check user in database for throttling",
+                        user_id=user_id,
+                        error=str(e),
+                    )
+                    # On DB error, allow action to avoid blocking
+
             last_action = self.user_last_action.get(user_id, 0)
             time_since_last = current_time - last_action
 

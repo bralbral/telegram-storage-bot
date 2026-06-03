@@ -76,7 +76,7 @@ async def setup_bot(
     database = Database(config.db_path)
     await database.init()
     await user.set_commands(bot, admin_ids)
-    dp.message.outer_middleware(ThrottleMiddleware(config.throttle_rate))
+    dp.message.outer_middleware(ThrottleMiddleware(config.throttle_rate, database))
 
     # Initialize access middleware
     dp.message.outer_middleware(
