@@ -1,10 +1,14 @@
 import re
+import tarfile
+import tempfile
+from pathlib import Path
 
 from aiogram.filters import CommandObject
 from aiogram.types import BotCommand, BotCommandScopeChat, Message
 
 from src.db.database import Database
 from src.exceptions import ValidationError
+from src.handlers.files import file_buffer
 from src.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -109,6 +113,113 @@ async def cmd_set_prefix(
         await message.answer("❌ Failed to set prefix. Please try again.")
 
 
+async def cmd_buffer(message: Message) -> None:
+    """Handle /buffer command - show files in buffer."""
+    user_id = message.from_user.id
+    buffer = file_buffer.get(user_id, [])
+
+    if not buffer:
+        await message.answer("📭 Buffer is empty. Send files to add them.")
+        return
+
+    total_size = sum(
+        int(f.get("file_size", 0) or 0) for f in buffer if f.get("file_size")
+    )
+    size_mb = total_size / (1024 * 1024) if total_size else 0
+
+    files_list = "\n".join(
+        [
+            f"• {f['type']}: {f['filename']} ({int(f.get('file_size', 0) or 0) / (1024 * 1024):.1f} MB)"
+            if f.get("file_size")
+            else f"• {f['type']}: {f['filename']}"
+            for f in buffer
+        ]
+    )
+
+    await message.answer(
+        f"📦 Buffer: {len(buffer)} file(s)\n"
+        f"📊 Total size: {size_mb:.1f} MB\n\n"
+        f"{files_list}\n\n"
+        f"Use /drop to save all or /clear to empty buffer."
+    )
+    logger.info("User viewed buffer", user_id=user_id, count=len(buffer))
+
+
+async def cmd_clear(message: Message) -> None:
+    """Handle /clear command - clear buffer."""
+    user_id = message.from_user.id
+    count = len(file_buffer.get(user_id, []))
+    file_buffer[user_id] = []
+
+    await message.answer(f"🗑️ Buffer cleared ({count} file(s) removed).")
+    logger.info("User cleared buffer", user_id=user_id, removed=count)
+
+
+async def cmd_drop(message: Message, user_data: tuple, download_dir: Path, bot) -> None:
+    """Handle /drop command - save all files from buffer as tar.gz archive."""
+    user_id = message.from_user.id
+    buffer = file_buffer.get(user_id, [])
+
+    if not buffer:
+        await message.answer("📭 Buffer is empty. Send files first.")
+        return
+
+    prefix = user_data[0] or ""
+    await message.reply(f"⏳ Processing {len(buffer)} file(s)...")
+
+    try:
+        import uuid
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        uuid_part = uuid.uuid4().hex[:8]
+        archive_name = f"{prefix}_{timestamp}_{uuid_part}.tar.gz"
+        archive_path = download_dir / archive_name
+
+        # Create tar.gz archive
+        with tarfile.open(archive_path, "w:gz") as tar:
+            for file_info in buffer:
+                try:
+                    tg_file = await bot.get_file(file_info["file_id"])
+                    # Download to temp file
+                    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                        await bot.download_file(tg_file.file_path, temp_file.name)
+
+                        # Detect image format for photos
+                        filename = str(file_info.get("filename", "file"))
+                        if file_info["type"] == "photo":
+                            from src.handlers.files import detect_image_format
+
+                            ext = detect_image_format(Path(temp_file.name))
+                            filename = f"photo{ext}"
+
+                        # Add to archive
+                        tar.add(temp_file.name, arcname=filename)
+                        Path(temp_file.name).unlink()  # Clean up temp file
+
+                except Exception as e:
+                    logger.error(
+                        "Failed to process file in buffer",
+                        file_id=file_info["file_id"],
+                        error=str(e),
+                    )
+
+        # Clear buffer
+        file_buffer[user_id] = []
+
+        await message.reply(f"✅ Archive saved: {archive_name}")
+        logger.info(
+            "Buffer saved as archive",
+            user_id=user_id,
+            archive=archive_name,
+            count=len(buffer),
+        )
+
+    except Exception as e:
+        logger.error("Failed to save buffer as archive", user_id=user_id, error=str(e))
+        await message.reply("❌ Failed to save archive. Please try again.")
+
+
 async def set_commands(
     bot, admin_ids: list[int] | None = None, user_id: int | None = None
 ) -> None:
@@ -126,6 +237,9 @@ async def set_commands(
         BotCommand(command="start", description="Start the bot"),
         BotCommand(command="my_prefix", description="Show your prefix"),
         BotCommand(command="set_prefix", description="Set file prefix (1-10 chars)"),
+        BotCommand(command="buffer", description="View file buffer"),
+        BotCommand(command="drop", description="Save buffer as archive"),
+        BotCommand(command="clear", description="Clear buffer"),
     ]
 
     # Admin commands (only for admins)
@@ -137,6 +251,9 @@ async def set_commands(
         BotCommand(command="remove_user", description="Remove user"),
         BotCommand(command="list_users", description="List all users"),
         BotCommand(command="status", description="Bot status"),
+        BotCommand(command="buffer", description="View file buffer"),
+        BotCommand(command="drop", description="Save buffer as archive"),
+        BotCommand(command="clear", description="Clear buffer"),
     ]
 
     # Set commands only for specific user (called from /start)

@@ -1,17 +1,46 @@
 from __future__ import annotations
 
-import asyncio
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 from aiogram import F
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import Message
 
 from src.logging_config import get_logger
 from src.utils.file_utils import save_file_direct_streaming, save_file_gzip_streaming
 
 logger = get_logger(__name__)
+
+# File buffer storage: {user_id: [{"file_id": str, "filename": str, "file_size": int, "type": str}]}
+file_buffer = defaultdict(list)
+
+# Image format detection by magic bytes
+IMAGE_MAGIC_BYTES = {
+    b"\xff\xd8\xff": ".jpg",
+    b"\x89PNG\r\n\x1a\n": ".png",
+    b"GIF87a": ".gif",
+    b"GIF89a": ".gif",
+    b"RIFF": ".webp",  # WEBP starts with RIFF....WEBP
+    b"\x00\x00\x00\x0cJXR ": ".jxr",
+    b"\x00\x00\x00 ftypavif": ".avif",
+    b"\x00\x00\x00 ftypheic": ".heic",
+}
+
+
+def detect_image_format(file_path: Path) -> str:
+    """Detect image format by reading magic bytes."""
+    try:
+        with open(file_path, "rb") as f:
+            header = f.read(12)
+        for magic, ext in IMAGE_MAGIC_BYTES.items():
+            if header.startswith(magic):
+                return ext
+        # Default to jpg if unknown
+        return ".jpg"
+    except Exception:
+        return ".jpg"
+
 
 COMPRESSED_EXTENSIONS = {
     ".gz",
@@ -78,36 +107,42 @@ async def handle_file(
     download_dir: Path,
     max_file_size: int,
 ) -> None:
-    """Handle incoming files - compress and save as gzip in background."""
-    prefix = user_data[0] or ""
+    """Handle incoming files - add to buffer instead of immediate save."""
     file_id: str | None = None
     original_filename: str = ""
     file_size: int | None = None
+    file_type: str = ""
 
     if message.document:
         file_id = message.document.file_id
         original_filename = message.document.file_name or "document"
         file_size = message.document.file_size
+        file_type = "document"
     elif message.photo:
         file_id = message.photo[-1].file_id
-        original_filename = "photo.jpg"  # Photos don't have original names
+        original_filename = "photo.jpg"  # Will be updated after download
         file_size = message.photo[-1].file_size
+        file_type = "photo"
     elif message.video:
         file_id = message.video.file_id
         original_filename = message.video.file_name or "video.mp4"
         file_size = message.video.file_size
+        file_type = "video"
     elif message.audio:
         file_id = message.audio.file_id
         original_filename = message.audio.file_name or "audio.mp3"
         file_size = message.audio.file_size
+        file_type = "audio"
     elif message.voice:
         file_id = message.voice.file_id
         original_filename = "voice.ogg"  # Voice messages don't have names
         file_size = message.voice.file_size
+        file_type = "voice"
     elif message.animation:
         file_id = message.animation.file_id
         original_filename = message.animation.file_name or "animation.gif"
         file_size = message.animation.file_size
+        file_type = "animation"
 
     if file_id:
         # Check file size limit
@@ -121,51 +156,28 @@ async def handle_file(
                 f"❌ File too large. Maximum size is {max_file_size / (1024 * 1024 * 1024):.1f}GB."
             )
             return
-        try:
-            file_info = await message.bot.get_file(file_id)
-            file_path = file_info.file_path
 
-            # Download file using the correct aiogram 3.x method
-            destination = download_dir / f"temp_{file_id}"
-            await message.bot.download_file(file_path, destination)
+        # Add to buffer instead of immediate save
+        user_id = message.from_user.id
+        file_buffer[user_id].append(
+            {
+                "file_id": file_id,
+                "filename": original_filename,
+                "file_size": file_size,
+                "type": file_type,
+            }
+        )
 
-            # Send initial message
-            await message.reply("⏳ Saving file...")
-
-            # Process in background without task queue
-            asyncio.create_task(
-                process_file_in_background(
-                    message,
-                    destination,
-                    prefix,
-                    original_filename,
-                    message.from_user.id,
-                    download_dir,
-                    max_file_size,
-                )
-            )
-        except TelegramBadRequest as e:
-            logger.error(
-                "Telegram API error",
-                file_id=file_id,
-                user_id=message.from_user.id,
-                error=str(e),
-            )
-            await message.reply("❌ File not available or too large")
-        except FileNotFoundError as e:
-            logger.error(
-                "File not found after download",
-                user_id=message.from_user.id,
-                error=str(e),
-            )
-            await message.reply("❌ Failed to process downloaded file")
-        except Exception as e:
-            logger.error(
-                "Error handling file",
-                user_id=message.from_user.id,
-                error=str(e),
-            )
-            await message.reply("❌ Failed to process file")
+        buffer_count = len(file_buffer[user_id])
+        await message.reply(
+            f"📎 Added to buffer ({buffer_count} file(s)). Use /drop to save all or /buffer to view."
+        )
+        logger.info(
+            "File added to buffer",
+            user_id=user_id,
+            filename=original_filename,
+            buffer_count=buffer_count,
+        )
 
 
 def register_file_handlers(dp: Any, download_dir: Path, max_file_size: int) -> None:

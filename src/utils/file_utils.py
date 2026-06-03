@@ -63,6 +63,7 @@ async def save_file_gzip_streaming(
     """Compress file with streaming to avoid loading entire file into memory.
 
     Reads file in chunks (1MB) and compresses on-the-fly to avoid OOM.
+    Preserves original filename inside gzip archive.
 
     Args:
         source_path: Path to the source file
@@ -88,12 +89,16 @@ async def save_file_gzip_streaming(
     try:
         with open(source_path, "rb") as f_in:
             with open(filepath, "wb") as f_out:
-                with gzip.open(f_out, "wb") as gzip_file:
-                    while True:
-                        chunk = f_in.read(chunk_size)
-                        if not chunk:
-                            break
-                        gzip_file.write(chunk)
+                # Use gzip.GzipFile to preserve original filename inside archive
+                gzip_file = gzip.GzipFile(
+                    fileobj=f_out, mode="wb", filename=original_filename or "file"
+                )
+                while True:
+                    chunk = f_in.read(chunk_size)
+                    if not chunk:
+                        break
+                    gzip_file.write(chunk)
+                gzip_file.close()
         logger.info(
             "File saved", filename=filename, original_filename=original_filename
         )

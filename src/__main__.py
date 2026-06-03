@@ -86,6 +86,9 @@ async def setup_bot(
     dp.message.register(user.cmd_start, Command("start"))
     dp.message.register(user.cmd_my_prefix, Command("my_prefix"))
     dp.message.register(user.cmd_set_prefix, Command("set_prefix"))
+    dp.message.register(user.cmd_buffer, Command("buffer"))
+    dp.message.register(user.cmd_clear, Command("clear"))
+    dp.message.register(user.cmd_drop, Command("drop"))
 
     cmd_add_user, cmd_remove_user, cmd_list_users, cmd_status = create_admin_handlers(
         admin_ids
