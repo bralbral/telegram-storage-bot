@@ -74,7 +74,9 @@ def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> Non
                 # Clean up potentially broken image
                 try:
                     client.images.remove(image_name, force=True)
-                    logger.info("Cleaned up broken image after pull error", image=image_name)
+                    logger.info(
+                        "Cleaned up broken image after pull error", image=image_name
+                    )
                 except Exception:
                     pass
                 raise
@@ -83,7 +85,9 @@ def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> Non
                 # Clean up potentially broken image
                 try:
                     client.images.remove(image_name, force=True)
-                    logger.info("Cleaned up broken image after pull error", image=image_name)
+                    logger.info(
+                        "Cleaned up broken image after pull error", image=image_name
+                    )
                 except Exception:
                     pass
                 raise
