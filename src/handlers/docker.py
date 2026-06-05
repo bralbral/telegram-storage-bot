@@ -14,6 +14,8 @@ from aiogram.types import Message
 
 from src.logging_config import get_logger
 
+DOCKER_PULL_TIMEOUT = 600  # 10 minutes timeout for docker pull
+
 logger = get_logger(__name__)
 
 
@@ -54,9 +56,30 @@ def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> Non
                 "Successfully connected to Docker daemon", docker_host=docker_host
             )
 
-            # Pull image with retry
+            # Pull image with timeout
             logger.info("Pulling Docker image", image=image_name)
-            client.images.pull(image_name)
+            try:
+                # Use asyncio.wait_for to add timeout to the pull operation
+                # Note: This runs in thread pool, so we need to handle timeout differently
+                client.images.pull(image_name, timeout=DOCKER_PULL_TIMEOUT)
+            except docker.errors.APIError as e:
+                logger.error("Docker pull API error", image=image_name, error=str(e))
+                # Clean up potentially broken image
+                try:
+                    client.images.remove(image_name, force=True)
+                    logger.info("Cleaned up broken image after pull error", image=image_name)
+                except Exception:
+                    pass
+                raise
+            except Exception as e:
+                logger.error("Docker pull failed", image=image_name, error=str(e))
+                # Clean up potentially broken image
+                try:
+                    client.images.remove(image_name, force=True)
+                    logger.info("Cleaned up broken image after pull error", image=image_name)
+                except Exception:
+                    pass
+                raise
             logger.info("Image pulled successfully", image=image_name)
 
             # Generate filename
@@ -130,17 +153,20 @@ def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> Non
         download_dir: Path,
         docker_host: str,
     ) -> None:
-        """Async wrapper that runs sync function in thread pool."""
+        """Async wrapper that runs sync function in thread pool with timeout."""
         try:
             await message.reply(f"🐳 Downloading {image_name}...")
-            gz_filename = await asyncio.to_thread(
-                process_docker_pull_sync,
-                message,
-                image_name,
-                prefix,
-                user_id,
-                download_dir,
-                docker_host,
+            gz_filename = await asyncio.wait_for(
+                asyncio.to_thread(
+                    process_docker_pull_sync,
+                    message,
+                    image_name,
+                    prefix,
+                    user_id,
+                    download_dir,
+                    docker_host,
+                ),
+                timeout=DOCKER_PULL_TIMEOUT + 60,  # Extra time for compression
             )
             await message.reply(f"✅ Docker image saved: {gz_filename}")
             await logger.ainfo(
@@ -149,6 +175,14 @@ def register_text_handlers(dp: Any, download_dir: Path, docker_host: str) -> Non
                 user_id=user_id,
                 filename=gz_filename,
             )
+        except asyncio.TimeoutError:
+            await logger.aerror(
+                "Docker pull timeout exceeded",
+                image_name=image_name,
+                user_id=user_id,
+                timeout=DOCKER_PULL_TIMEOUT,
+            )
+            await message.reply(f"❌ Download timeout (>{DOCKER_PULL_TIMEOUT}s). Try again.")
         except Exception as e:
             await logger.aerror(
                 "Error in async wrapper for docker pull",
