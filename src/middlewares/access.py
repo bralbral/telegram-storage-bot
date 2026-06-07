@@ -8,6 +8,9 @@ from aiogram.types import Message
 
 from src.db.database import Database
 from src.logging_config import get_logger
+from src.services.docker_service import DockerService
+from src.services.file_service import FileService
+from src.services.user_service import UserService
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -18,7 +21,15 @@ logger = get_logger(__name__)
 class AccessMiddleware(BaseMiddleware):
     """Middleware that checks user access - admins from config have automatic access."""
 
-    __slots__ = ("db", "admin_ids", "download_dir", "bot")
+    __slots__ = (
+        "db",
+        "admin_ids",
+        "download_dir",
+        "bot",
+        "file_service",
+        "docker_service",
+        "user_service",
+    )
 
     def __init__(
         self,
@@ -26,11 +37,17 @@ class AccessMiddleware(BaseMiddleware):
         admin_ids: list[int] | None = None,
         download_dir: Path | None = None,
         bot=None,
+        file_service: FileService | None = None,
+        docker_service: DockerService | None = None,
+        user_service: UserService | None = None,
     ):
         self.db = db
         self.admin_ids = admin_ids or []
         self.download_dir = download_dir
         self.bot = bot
+        self.file_service = file_service
+        self.docker_service = docker_service
+        self.user_service = user_service
 
     async def __call__(
         self,
@@ -80,9 +97,17 @@ class AccessMiddleware(BaseMiddleware):
             data["has_prefix"] = bool(prefix)
             data["is_admin"] = is_admin
             data["db"] = self.db
-            data["download_dir"] = self.download_dir
+
+            # Inject services
+            if self.file_service:
+                data["file_service"] = self.file_service
+            if self.docker_service:
+                data["docker_service"] = self.docker_service
+
+            # Add bot, admin_ids, and download_dir for handlers that need them
             data["bot"] = self.bot
             data["admin_ids"] = self.admin_ids
+            data["download_dir"] = self.download_dir
 
             # All users need prefix for files and docker pull
             if (has_file or is_docker_pull) and not data["has_prefix"]:

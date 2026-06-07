@@ -9,15 +9,16 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.session.base import TelegramAPIServer
 from aiogram.filters import Command
+from dependency_injector.wiring import Provide, inject
 
-from src.config import Config
-from src.db.database import Database
+from src.container import Container
 from src.handlers import docker, files, user
 from src.handlers.admin import create_admin_handlers
 from src.health import HealthServer
 from src.logging_config import configure_logging, get_logger
 from src.middlewares.access import AccessMiddleware
 from src.middlewares.throttle import ThrottleMiddleware
+from src.models.config import Config
 
 
 # Load environment variables from .env file if it exists (before logging setup)
@@ -47,12 +48,38 @@ configure_logging(log_level=os.getenv("LOG_LEVEL", "INFO"))
 logger = get_logger(__name__)
 
 
+# Wire the container
+container = Container()
+container.config.from_dict(
+    {
+        "bot_token": os.getenv("BOT_TOKEN"),
+        "admin_ids": os.getenv("ADMIN_IDS", ""),
+        "download_dir": os.getenv("DOWNLOAD_DIR", str(Path.cwd() / "downloads")),
+        "db_path": os.getenv("DB_PATH", str(Path.cwd() / "users.db")),
+        "max_file_size": os.getenv("MAX_FILE_SIZE", str(2 * 1024 * 1024 * 1024)),
+        "throttle_rate": os.getenv("THROTTLE_RATE", "3.0"),
+        "log_level": os.getenv("LOG_LEVEL", "INFO"),
+        "health_port": os.getenv("HEALTH_PORT", "8080"),
+        "docker_host": os.getenv("DOCKER_HOST", "unix:///var/run/docker.sock"),
+        "telegram_api_id": os.getenv("TELEGRAM_API_ID"),
+        "telegram_api_hash": os.getenv("TELEGRAM_API_HASH"),
+        "use_local_api": os.getenv("USE_LOCAL_API", "true"),
+        "local_api_url": os.getenv("LOCAL_API_URL", "http://127.0.0.1:8081"),
+    }
+)
+
+
+@inject
 async def setup_bot(
-    config: Config,
-) -> tuple[Bot, Dispatcher, HealthServer, Database]:
+    config: Config = Provide[container.pydantic_config],
+    database=Provide[container.database],
+    user_service=Provide[container.user_service],
+    file_service=Provide[container.file_service],
+    docker_service=Provide[container.docker_service],
+) -> tuple[Bot, Dispatcher, HealthServer]:
     """Create and configure bot and dispatcher."""
     bot_token = config.bot_token
-    admin_ids = config.admin_ids
+    admin_ids = config.admin_ids_list
 
     if not bot_token:
         logger.error("Bot token is not configured")
@@ -73,16 +100,24 @@ async def setup_bot(
     dp = Dispatcher()
 
     # Initialize database
-    database = Database(config.db_path)
     await database.init()
     await user.set_commands(bot, admin_ids)
     dp.message.outer_middleware(ThrottleMiddleware(config.throttle_rate, database))
 
-    # Initialize access middleware
+    # Initialize access middleware with services
     dp.message.outer_middleware(
-        AccessMiddleware(database, admin_ids, config.download_dir, bot)
+        AccessMiddleware(
+            database,
+            admin_ids,
+            config.download_dir,
+            bot,
+            file_service=file_service,
+            docker_service=docker_service,
+            user_service=user_service,
+        )
     )
 
+    # Register user commands (services injected via middleware)
     dp.message.register(user.cmd_start, Command("start"))
     dp.message.register(user.cmd_my_prefix, Command("my_prefix"))
     dp.message.register(user.cmd_set_prefix, Command("set_prefix"))
@@ -90,28 +125,30 @@ async def setup_bot(
     dp.message.register(user.cmd_clear, Command("clear"))
     dp.message.register(user.cmd_drop, Command("drop"))
 
+    # Register admin commands
     cmd_add_user, cmd_remove_user, cmd_list_users, cmd_status = create_admin_handlers(
-        admin_ids
+        admin_ids, config
     )
     dp.message.register(cmd_add_user, Command("add_user"))
     dp.message.register(cmd_remove_user, Command("remove_user"))
     dp.message.register(cmd_list_users, Command("list_users"))
     dp.message.register(cmd_status, Command("status"))
 
-    files.register_file_handlers(dp, config.download_dir, config.max_file_size)
-    docker.register_text_handlers(dp, config.download_dir, config.docker_host)
+    # Register file and docker handlers
+    files.register_file_handlers(dp, file_service, config.max_file_size)
+    docker.register_text_handlers(dp, docker_service)
 
     # Health check server
     health_server = HealthServer(port=config.health_port)
 
     logger.info(f"Bot configured with {len(admin_ids)} admin(s)")
-    return bot, dp, health_server, database
+    return bot, dp, health_server
 
 
 async def run_bot() -> None:
     """Run the bot with graceful shutdown."""
-    config = Config()
-    bot, dp, health_server, database = (None, None, None, None)
+    config = container.pydantic_config()
+    bot, dp, health_server = (None, None, None)
     shutdown_event = asyncio.Event()
 
     def signal_handler(signum, frame):
@@ -124,7 +161,7 @@ async def run_bot() -> None:
     signal.signal(signal.SIGINT, signal_handler)
 
     try:
-        bot, dp, health_server, database = await setup_bot(config)
+        bot, dp, health_server = await setup_bot()
         config.download_dir.mkdir(parents=True, exist_ok=True)
 
         # Start health check server
@@ -162,6 +199,7 @@ async def run_bot() -> None:
         logger.info("Initiating cleanup...")
         try:
             # Close database
+            database = container.database()
             if database:
                 await database.close()
             if health_server:

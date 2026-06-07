@@ -4,3 +4,6 @@ aiofiles==25.1.0
 docker==7.1.0
 structlog==25.5.0
 pre-commit==4.6.0
+pydantic==2.10.6
+pydantic-settings==2.7.1
+dependency-injector==4.45.0

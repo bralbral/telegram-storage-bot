@@ -1,44 +1,19 @@
-import re
-import tarfile
-import tempfile
-from pathlib import Path
+from __future__ import annotations
 
 from aiogram.filters import CommandObject
 from aiogram.types import BotCommand, BotCommandScopeChat, Message
 
-from src.db.database import Database
-from src.exceptions import ValidationError
-from src.handlers.files import file_buffer
 from src.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 
-def is_valid_prefix(prefix: str) -> bool:
-    """Validate prefix: only latin alphanumeric characters and underscore, 1-10 chars."""
-    return (
-        bool(prefix)
-        and 1 <= len(prefix) <= 10
-        and bool(re.match(r"^[a-zA-Z0-9_]+$", prefix))
-    )
-
-
-def validate_prefix(prefix: str) -> None:
-    """Validate prefix and raise ValidationError if invalid."""
-    if not prefix:
-        raise ValidationError("Prefix cannot be empty")
-    if not (1 <= len(prefix) <= 10):
-        raise ValidationError("Prefix must be 1-10 characters long")
-    if not re.match(r"^[a-zA-Z0-9_]+$", prefix):
-        raise ValidationError(
-            "Prefix must contain only latin letters, numbers, and underscores"
-        )
-
-
-async def cmd_start(
-    message: Message, user_data: tuple, bot, admin_ids: list[int], **kwargs
-) -> None:
+async def cmd_start(message: Message, **kwargs) -> None:
     """Handle /start command - show greeting with current prefix and update commands."""
+    user_data = kwargs.get("user_data", ("", False))
+    bot = kwargs.get("bot")
+    admin_ids = kwargs.get("admin_ids", [])
+
     prefix = user_data[0] or ""
     try:
         await message.answer(
@@ -59,8 +34,9 @@ async def cmd_start(
         raise
 
 
-async def cmd_my_prefix(message: Message, user_data: tuple) -> None:
+async def cmd_my_prefix(message: Message, **kwargs) -> None:
     """Handle /my_prefix command - show current user prefix."""
+    user_data = kwargs.get("user_data", ("", False))
     prefix = user_data[0] or ""
     try:
         if prefix:
@@ -79,10 +55,12 @@ async def cmd_my_prefix(message: Message, user_data: tuple) -> None:
         raise
 
 
-async def cmd_set_prefix(
-    message: Message, command: CommandObject, user_data: tuple, db: Database
-) -> None:
+async def cmd_set_prefix(message: Message, command: CommandObject, **kwargs) -> None:
     """Handle /set_prefix command - set user's file prefix (1-10 latin chars)."""
+    user_service = kwargs.get("user_service")
+    if not user_service:
+        raise RuntimeError("user_service not provided in kwargs")
+
     if not command.args:
         await message.answer(
             "Usage: /set_prefix <prefix> (1-10 latin alphanumeric characters)"
@@ -91,13 +69,7 @@ async def cmd_set_prefix(
 
     prefix = command.args.strip()
     try:
-        validate_prefix(prefix)
-    except ValidationError as e:
-        await message.answer(f"❌ {e}")
-        return
-
-    try:
-        await db.set_prefix(message.from_user.id, prefix)
+        await user_service.set_prefix(message.from_user.id, prefix)
         await message.answer(f"✅ Prefix set to: `{prefix}`")
         logger.info(
             "User set prefix",
@@ -113,25 +85,27 @@ async def cmd_set_prefix(
         await message.answer("❌ Failed to set prefix. Please try again.")
 
 
-async def cmd_buffer(message: Message) -> None:
+async def cmd_buffer(message: Message, **kwargs) -> None:
     """Handle /buffer command - show files in buffer."""
+    file_service = kwargs.get("file_service")
+    if not file_service:
+        raise RuntimeError("file_service not provided in kwargs")
+
     user_id = message.from_user.id
-    buffer = file_buffer.get(user_id, [])
+    buffer = file_service.get_buffer(user_id)
 
     if not buffer:
         await message.answer("📭 Buffer is empty. Send files to add them.")
         return
 
-    total_size = sum(
-        int(f.get("file_size", 0) or 0) for f in buffer if f.get("file_size")
-    )
+    total_size = file_service.get_buffer_size(user_id)
     size_mb = total_size / (1024 * 1024) if total_size else 0
 
     files_list = "\n".join(
         [
-            f"• {f['type']}: {f['filename']} ({int(f.get('file_size', 0) or 0) / (1024 * 1024):.1f} MB)"
-            if f.get("file_size")
-            else f"• {f['type']}: {f['filename']}"
+            f"• {f.file_type}: {f.filename} ({int(f.file_size or 0) / (1024 * 1024):.1f} MB)"
+            if f.file_size
+            else f"• {f.file_type}: {f.filename}"
             for f in buffer
         ]
     )
@@ -145,20 +119,30 @@ async def cmd_buffer(message: Message) -> None:
     logger.info("User viewed buffer", user_id=user_id, count=len(buffer))
 
 
-async def cmd_clear(message: Message) -> None:
+async def cmd_clear(message: Message, **kwargs) -> None:
     """Handle /clear command - clear buffer."""
+    file_service = kwargs.get("file_service")
+    if not file_service:
+        raise RuntimeError("file_service not provided in kwargs")
+
     user_id = message.from_user.id
-    count = len(file_buffer.get(user_id, []))
-    file_buffer[user_id] = []
+    count = file_service.clear_buffer(user_id)
 
     await message.answer(f"🗑️ Buffer cleared ({count} file(s) removed).")
     logger.info("User cleared buffer", user_id=user_id, removed=count)
 
 
-async def cmd_drop(message: Message, user_data: tuple, download_dir: Path, bot) -> None:
+async def cmd_drop(message: Message, **kwargs) -> None:
     """Handle /drop command - save all files from buffer as tar.gz archive."""
+    user_data = kwargs.get("user_data", ("", False))
+    bot = kwargs.get("bot")
+    file_service = kwargs.get("file_service")
+
+    if not file_service or not bot:
+        raise RuntimeError("file_service or bot not provided in kwargs")
+
     user_id = message.from_user.id
-    buffer = file_buffer.get(user_id, [])
+    buffer = file_service.get_buffer(user_id)
 
     if not buffer:
         await message.answer("📭 Buffer is empty. Send files first.")
@@ -168,45 +152,9 @@ async def cmd_drop(message: Message, user_data: tuple, download_dir: Path, bot) 
     await message.reply(f"⏳ Processing {len(buffer)} file(s)...")
 
     try:
-        import uuid
-        from datetime import datetime
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        uuid_part = uuid.uuid4().hex[:8]
-        archive_name = f"{prefix}_{timestamp}_{uuid_part}.tar.gz"
-        archive_path = download_dir / archive_name
-
-        # Create tar.gz archive
-        with tarfile.open(archive_path, "w:gz") as tar:
-            for file_info in buffer:
-                try:
-                    tg_file = await bot.get_file(file_info["file_id"])
-                    # Download to temp file
-                    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-                        await bot.download_file(tg_file.file_path, temp_file.name)
-
-                        # Detect image format for photos
-                        filename = str(file_info.get("filename", "file"))
-                        if file_info["type"] == "photo":
-                            from src.handlers.files import detect_image_format
-
-                            ext = detect_image_format(Path(temp_file.name))
-                            filename = f"photo{ext}"
-
-                        # Add to archive
-                        tar.add(temp_file.name, arcname=filename)
-                        Path(temp_file.name).unlink()  # Clean up temp file
-
-                except Exception as e:
-                    logger.error(
-                        "Failed to process file in buffer",
-                        file_id=file_info["file_id"],
-                        error=str(e),
-                    )
-
-        # Clear buffer
-        file_buffer[user_id] = []
-
+        archive_name = await file_service.create_archive_from_buffer(
+            user_id, prefix, bot
+        )
         await message.reply(f"✅ Archive saved: {archive_name}")
         logger.info(
             "Buffer saved as archive",
@@ -238,40 +186,29 @@ async def set_commands(
         BotCommand(command="my_prefix", description="Show your prefix"),
         BotCommand(command="set_prefix", description="Set file prefix (1-10 chars)"),
         BotCommand(command="buffer", description="View file buffer"),
+        BotCommand(command="clear", description="Clear file buffer"),
         BotCommand(command="drop", description="Save buffer as archive"),
-        BotCommand(command="clear", description="Clear buffer"),
     ]
 
-    # Admin commands (only for admins)
+    # Admin-only commands
     admin_commands = [
-        BotCommand(command="start", description="Start the bot"),
-        BotCommand(command="my_prefix", description="Show your prefix"),
-        BotCommand(command="set_prefix", description="Set file prefix (1-10 chars)"),
-        BotCommand(command="add_user", description="Add user"),
-        BotCommand(command="remove_user", description="Remove user"),
-        BotCommand(command="list_users", description="List all users"),
-        BotCommand(command="status", description="Bot status"),
-        BotCommand(command="buffer", description="View file buffer"),
-        BotCommand(command="drop", description="Save buffer as archive"),
-        BotCommand(command="clear", description="Clear buffer"),
+        BotCommand(command="add_user", description="Add user (admin only)"),
+        BotCommand(command="remove_user", description="Remove user (admin only)"),
+        BotCommand(command="list_users", description="List all users (admin only)"),
+        BotCommand(command="status", description="Bot status (admin only)"),
     ]
 
-    # Set commands only for specific user (called from /start)
     if user_id:
-        commands = admin_commands if user_id in admin_ids else basic_commands
-        try:
+        # Set commands for specific user
+        if user_id in admin_ids:
             await bot.set_my_commands(
-                commands, scope=BotCommandScopeChat(chat_id=user_id)
+                basic_commands + admin_commands,
+                scope=BotCommandScopeChat(chat_id=user_id),
             )
-            logger.info(
-                "Commands set for user",
-                user_id=user_id,
-                is_admin=user_id in admin_ids,
+        else:
+            await bot.set_my_commands(
+                basic_commands, scope=BotCommandScopeChat(chat_id=user_id)
             )
-        except Exception as e:
-            logger.warning(
-                "Failed to set commands for user",
-                user_id=user_id,
-                error=str(e),
-            )
-        return
+    else:
+        # Set default commands for all users (no scope)
+        await bot.set_my_commands(basic_commands)
