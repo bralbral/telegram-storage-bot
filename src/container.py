@@ -22,7 +22,7 @@ class Container(containers.DeclarativeContainer):
     # Database
     database = providers.Singleton(
         Database,
-        path=providers.Attribute(pydantic_config, "db_path"),
+        path=pydantic_config.provided.db_path,
     )
 
     # Services
@@ -36,11 +36,11 @@ class Container(containers.DeclarativeContainer):
     file_service = providers.Singleton(
         FileService,
         compression_service=compression_service,
-        download_dir=providers.Attribute(pydantic_config, "download_dir"),
+        download_dir=pydantic_config.provided.download_dir,
     )
 
     docker_service = providers.Singleton(
         DockerService,
-        docker_host=providers.Attribute(pydantic_config, "docker_host"),
-        download_dir=providers.Attribute(pydantic_config, "download_dir"),
+        docker_host=pydantic_config.provided.docker_host,
+        download_dir=pydantic_config.provided.download_dir,
     )

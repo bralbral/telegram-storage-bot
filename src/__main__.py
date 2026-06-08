@@ -9,8 +9,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.session.base import TelegramAPIServer
 from aiogram.filters import Command
-from dependency_injector.wiring import Provide, inject
 
+from src.models.config import Config
 from src.container import Container
 from src.handlers import docker, files, user
 from src.handlers.admin import create_admin_handlers
@@ -18,7 +18,7 @@ from src.health import HealthServer
 from src.logging_config import configure_logging, get_logger
 from src.middlewares.access import AccessMiddleware
 from src.middlewares.throttle import ThrottleMiddleware
-from src.models.config import Config
+
 
 
 # Load environment variables from .env file if it exists (before logging setup)
@@ -68,16 +68,15 @@ container.config.from_dict(
     }
 )
 
-
-@inject
-async def setup_bot(
-    config: Config = Provide[container.pydantic_config],
-    database=Provide[container.database],
-    user_service=Provide[container.user_service],
-    file_service=Provide[container.file_service],
-    docker_service=Provide[container.docker_service],
-) -> tuple[Bot, Dispatcher, HealthServer]:
+async def setup_bot() -> tuple[Bot, Dispatcher, HealthServer]:
     """Create and configure bot and dispatcher."""
+    config = Config()
+    
+    # Get services from container
+    database = container.database()
+    user_service = container.user_service()
+    file_service = container.file_service()
+    docker_service = container.docker_service()
     bot_token = config.bot_token
     admin_ids = config.admin_ids_list
 
