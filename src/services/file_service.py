@@ -5,7 +5,8 @@ import tempfile
 from collections import defaultdict
 from pathlib import Path
 
-from aiogram.types import Bot, Message
+from aiogram import Bot
+from aiogram.types import Message
 
 from src.handlers.files import detect_image_format
 from src.logging_config import get_logger
