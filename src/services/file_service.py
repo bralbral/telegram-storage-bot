@@ -8,10 +8,10 @@ from pathlib import Path
 from aiogram import Bot
 from aiogram.types import Message
 
-from src.utils.file_utils import detect_image_format
 from src.logging_config import get_logger
 from src.models.file_info import FileInfo
 from src.services.compression_service import CompressionService
+from src.utils.file_utils import detect_image_format
 
 logger = get_logger(__name__)
 

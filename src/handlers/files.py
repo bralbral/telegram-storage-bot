@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from aiogram import F
@@ -10,32 +9,6 @@ from src.logging_config import get_logger
 from src.services.file_service import FileService
 
 logger = get_logger(__name__)
-
-# Image format detection by magic bytes (kept for backward compatibility)
-IMAGE_MAGIC_BYTES = {
-    b"\xff\xd8\xff": ".jpg",
-    b"\x89PNG\r\n\x1a\n": ".png",
-    b"GIF87a": ".gif",
-    b"GIF89a": ".gif",
-    b"RIFF": ".webp",  # WEBP starts with RIFF....WEBP
-    b"\x00\x00\x00\x0cJXR ": ".jxr",
-    b"\x00\x00\x00 ftypavif": ".avif",
-    b"\x00\x00\x00 ftypheic": ".heic",
-}
-
-
-def detect_image_format(file_path: Path) -> str:
-    """Detect image format by reading magic bytes."""
-    try:
-        with open(file_path, "rb") as f:
-            header = f.read(12)
-        for magic, ext in IMAGE_MAGIC_BYTES.items():
-            if header.startswith(magic):
-                return ext
-        # Default to jpg if unknown
-        return ".jpg"
-    except Exception:
-        return ".jpg"
 
 
 async def handle_file(
