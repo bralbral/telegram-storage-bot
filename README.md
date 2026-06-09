@@ -11,14 +11,23 @@ Telegram bot for saving files and Docker images to disk with gzip compression. F
 ├── docker-compose.yml   # Docker Compose configuration
 ├── src/
 │   ├── __main__.py      # Entry point
+│   ├── config.py        # Configuration re-export
+│   ├── exceptions.py    # Custom exceptions
 │   ├── logging_config.py # Structured logging configuration
+│   ├── health.py        # Health check server
 │   ├── handlers/        # Command handlers
+│   │   ├── admin.py     # Admin commands
+│   │   ├── docker.py    # Docker pull handler
+│   │   ├── files.py     # File upload handler
+│   │   └── user.py      # User commands
 │   ├── db/              # SQLite database
 │   ├── middlewares/     # Access control & rate limiting
-│   ├── health.py        # Health check server
+│   ├── models/          # Pydantic models
+│   ├── services/        # Business logic services
 │   └── utils/           # File utilities
 ├── downloads/           # Saved files
-└── telegram-local-api/  # Telegram Bot API data files
+├── telegram-local-api/  # Telegram Bot API data files
+└── users.db             # SQLite database file
 ```
 
 ## Docker Images
