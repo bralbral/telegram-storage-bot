@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from aiogram.filters import CommandObject
 from aiogram.types import BotCommand, BotCommandScopeChat, Message
 
@@ -168,7 +170,6 @@ async def cmd_drop(message: Message, **kwargs) -> None:
             logger.error("Failed to save buffer as archive", user_id=user_id, error=str(e))
             await message.reply("❌ Failed to save archive. Please try again.")
 
-    import asyncio
     asyncio.create_task(process_archive())
 
 
