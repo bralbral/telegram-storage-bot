@@ -151,21 +151,25 @@ async def cmd_drop(message: Message, **kwargs) -> None:
     prefix = user_data[0] or ""
     await message.reply(f"⏳ Processing {len(buffer)} file(s)...")
 
-    try:
-        archive_name = await file_service.create_archive_from_buffer(
-            user_id, prefix, bot
-        )
-        await message.reply(f"✅ Archive saved: {archive_name}")
-        logger.info(
-            "Buffer saved as archive",
-            user_id=user_id,
-            archive=archive_name,
-            count=len(buffer),
-        )
+    async def process_archive() -> None:
+        """Process archive creation in background."""
+        try:
+            archive_name = await file_service.create_archive_from_buffer(
+                user_id, prefix, bot
+            )
+            await message.reply(f"✅ Archive saved: {archive_name}")
+            logger.info(
+                "Buffer saved as archive",
+                user_id=user_id,
+                archive=archive_name,
+                count=len(buffer),
+            )
+        except Exception as e:
+            logger.error("Failed to save buffer as archive", user_id=user_id, error=str(e))
+            await message.reply("❌ Failed to save archive. Please try again.")
 
-    except Exception as e:
-        logger.error("Failed to save buffer as archive", user_id=user_id, error=str(e))
-        await message.reply("❌ Failed to save archive. Please try again.")
+    import asyncio
+    asyncio.create_task(process_archive())
 
 
 async def set_commands(

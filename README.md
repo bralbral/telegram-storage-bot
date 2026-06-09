@@ -18,7 +18,7 @@ Telegram bot for saving files and Docker images to disk with gzip compression. F
 │   ├── health.py        # Health check server
 │   └── utils/           # File utilities
 ├── downloads/           # Saved files
-└── telegram-api-data/   # Telegram Bot API data files
+└── telegram-local-api/  # Telegram Bot API data files
 ```
 
 ## Docker Images
@@ -126,7 +126,7 @@ The bot includes a local Telegram Bot API server for downloading files larger th
 ### Access
 
 - **Internal Docker network**: `http://telegram-bot-api:8081` (used by storage-bot)
-- **Data directory**: `./telegram-api-data` (on host machine, accessible for backup/inspection)
+- **Data directory**: `./telegram-local-api` (on host machine, accessible for backup/inspection)
 
 The local API server provides:
 
