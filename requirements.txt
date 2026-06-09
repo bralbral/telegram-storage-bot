@@ -2,7 +2,7 @@ aiogram==3.28.2
 aiosqlite==0.22.1
 aiofiles==25.1.0
 docker==7.1.0
-structlog==25.5.0
+structlog==26.1.0
 pre-commit==4.6.0
 pydantic==2.13.4
-pydantic-settings==2.7.1
+pydantic-settings==2.14.1
