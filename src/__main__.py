@@ -10,15 +10,18 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.session.base import TelegramAPIServer
 from aiogram.filters import Command
 
-from src.models.config import Config
-from src.container import Container
+from src.db.database import Database
 from src.handlers import docker, files, user
 from src.handlers.admin import create_admin_handlers
 from src.health import HealthServer
 from src.logging_config import configure_logging, get_logger
 from src.middlewares.access import AccessMiddleware
 from src.middlewares.throttle import ThrottleMiddleware
-
+from src.models.config import Config
+from src.services.compression_service import CompressionService
+from src.services.docker_service import DockerService
+from src.services.file_service import FileService
+from src.services.user_service import UserService
 
 
 # Load environment variables from .env file if it exists (before logging setup)
@@ -48,35 +51,26 @@ configure_logging(log_level=os.getenv("LOG_LEVEL", "INFO"))
 logger = get_logger(__name__)
 
 
-# Wire the container
-container = Container()
-container.config.from_dict(
-    {
-        "bot_token": os.getenv("BOT_TOKEN"),
-        "admin_ids": os.getenv("ADMIN_IDS", ""),
-        "download_dir": os.getenv("DOWNLOAD_DIR", str(Path.cwd() / "downloads")),
-        "db_path": os.getenv("DB_PATH", str(Path.cwd() / "users.db")),
-        "max_file_size": os.getenv("MAX_FILE_SIZE", str(2 * 1024 * 1024 * 1024)),
-        "throttle_rate": os.getenv("THROTTLE_RATE", "3.0"),
-        "log_level": os.getenv("LOG_LEVEL", "INFO"),
-        "health_port": os.getenv("HEALTH_PORT", "8080"),
-        "docker_host": os.getenv("DOCKER_HOST", "unix:///var/run/docker.sock"),
-        "telegram_api_id": os.getenv("TELEGRAM_API_ID"),
-        "telegram_api_hash": os.getenv("TELEGRAM_API_HASH"),
-        "use_local_api": os.getenv("USE_LOCAL_API", "true"),
-        "local_api_url": os.getenv("LOCAL_API_URL", "http://127.0.0.1:8081"),
-    }
-)
-
 async def setup_bot() -> tuple[Bot, Dispatcher, HealthServer]:
     """Create and configure bot and dispatcher."""
     config = Config()
-    
-    # Get services from container
-    database = container.database()
-    user_service = container.user_service()
-    file_service = container.file_service()
-    docker_service = container.docker_service()
+
+    # Create services directly
+    database = Database(path=config.db_path)
+    compression_service = CompressionService()
+    download_dir = Path(config.download_dir)
+    download_dir.mkdir(parents=True, exist_ok=True)
+
+    user_service = UserService(database)
+    file_service = FileService(
+        compression_service=compression_service,
+        download_dir=download_dir,
+    )
+    docker_service = DockerService(
+        docker_host=config.docker_host,
+        download_dir=download_dir,
+    )
+
     bot_token = config.bot_token
     admin_ids = config.admin_ids_list
 
@@ -108,7 +102,7 @@ async def setup_bot() -> tuple[Bot, Dispatcher, HealthServer]:
         AccessMiddleware(
             database,
             admin_ids,
-            config.download_dir,
+            download_dir,
             bot,
             file_service=file_service,
             docker_service=docker_service,
@@ -146,8 +140,8 @@ async def setup_bot() -> tuple[Bot, Dispatcher, HealthServer]:
 
 async def run_bot() -> None:
     """Run the bot with graceful shutdown."""
-    config = container.pydantic_config()
-    bot, dp, health_server = (None, None, None)
+    config = Config()
+    bot, dp, health_server, database = (None, None, None, None)
     shutdown_event = asyncio.Event()
 
     def signal_handler(signum, frame):
@@ -161,6 +155,10 @@ async def run_bot() -> None:
 
     try:
         bot, dp, health_server = await setup_bot()
+
+        # Get database instance for cleanup
+        database = Database(path=config.db_path)
+
         config.download_dir.mkdir(parents=True, exist_ok=True)
 
         # Start health check server
@@ -169,7 +167,7 @@ async def run_bot() -> None:
         logger.info("Starting bot polling...")
 
         # Create tasks
-        polling_task = asyncio.create_task(dp.start_polling(bot))
+        polling_task = asyncio.create_task(dp.start_polling(bot, skip_updates=True))
         shutdown_task = asyncio.create_task(shutdown_event.wait())
 
         # Wait for either polling to complete or shutdown signal
@@ -198,7 +196,6 @@ async def run_bot() -> None:
         logger.info("Initiating cleanup...")
         try:
             # Close database
-            database = container.database()
             if database:
                 await database.close()
             if health_server:

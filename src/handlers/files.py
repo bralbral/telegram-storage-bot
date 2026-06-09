@@ -8,7 +8,6 @@ from aiogram.types import Message
 from src.logging_config import get_logger
 from src.services.file_service import FileService
 
-from src.utils.file_utils import detect_image_format
 logger = get_logger(__name__)
 
 

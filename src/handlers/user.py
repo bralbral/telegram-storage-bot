@@ -167,7 +167,9 @@ async def cmd_drop(message: Message, **kwargs) -> None:
                 count=len(buffer),
             )
         except Exception as e:
-            logger.error("Failed to save buffer as archive", user_id=user_id, error=str(e))
+            logger.error(
+                "Failed to save buffer as archive", user_id=user_id, error=str(e)
+            )
             await message.reply("❌ Failed to save archive. Please try again.")
 
     asyncio.create_task(process_archive())

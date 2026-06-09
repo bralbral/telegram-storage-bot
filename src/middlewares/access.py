@@ -57,6 +57,13 @@ class AccessMiddleware(BaseMiddleware):
     ) -> Any:
         """Check if user has access - admins auto-granted and added to DB."""
         user_id = event.from_user.id
+        logger.info(
+            "Message received",
+            user_id=user_id,
+            text=event.text,
+            has_document=bool(event.document),
+            has_photo=bool(event.photo),
+        )
         is_admin = user_id in self.admin_ids
 
         try:
@@ -68,10 +75,15 @@ class AccessMiddleware(BaseMiddleware):
                 logger.info("Admin auto-added to database", user_id=user_id)
                 prefix = ""
 
-            # Regular users must be in DB
+            # Regular users must be in DB, except for /start command
             if not is_admin and prefix is None:
-                logger.debug("Access denied: user not in database", user_id=user_id)
-                return
+                # Allow /start command for all users
+                if event.text and event.text.strip() == "/start":
+                    prefix = ""  # Allow start command
+                    logger.debug("Allowing /start for new user", user_id=user_id)
+                else:
+                    logger.debug("Access denied: user not in database", user_id=user_id)
+                    return
 
             # If prefix is still None (shouldn't happen), use empty string
             if prefix is None:
@@ -103,6 +115,8 @@ class AccessMiddleware(BaseMiddleware):
                 data["file_service"] = self.file_service
             if self.docker_service:
                 data["docker_service"] = self.docker_service
+            if self.user_service:
+                data["user_service"] = self.user_service
 
             # Add bot, admin_ids, and download_dir for handlers that need them
             data["bot"] = self.bot
