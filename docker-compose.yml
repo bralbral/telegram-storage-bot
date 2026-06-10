@@ -44,7 +44,8 @@ services:
     volumes:
       - ./telegram-local-api:/telegram-local-api:ro
       - ./downloads:/downloads
-      - ./users.db:/app/users.db
+      # copy from container after first run
+      # - ./users.db:/app/users.db
     depends_on:
       telegram-bot-api:
         condition: service_healthy
