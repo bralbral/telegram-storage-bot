@@ -80,16 +80,21 @@ class DockerService:
                 logger.error("Tar file was not created", tar_filepath=str(tar_filepath))
                 raise RuntimeError(f"Tar file was not created: {tar_filepath}")
 
-            # Compress to gz
+            # Compress to gz using streaming to avoid OOM
             logger.info("Compressing tar file to gzip", tar_filename=tar_filename)
             gz_filename = f"{tar_filename}.gz"
             gz_filepath = self.download_dir / gz_filename
 
+            chunk_size = 1024 * 1024  # 1MB chunks
             with open(tar_filepath, "rb") as f_in:
-                tar_bytes = f_in.read()
-            compressed = gzip.compress(tar_bytes)
-            with open(gz_filepath, "wb") as f_out:
-                f_out.write(compressed)
+                with open(gz_filepath, "wb") as f_out:
+                    gzip_file = gzip.GzipFile(fileobj=f_out, mode="wb")
+                    while True:
+                        chunk = f_in.read(chunk_size)
+                        if not chunk:
+                            break
+                        gzip_file.write(chunk)
+                    gzip_file.close()
 
             # Clean up original tar file
             tar_filepath.unlink()
