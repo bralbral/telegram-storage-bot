@@ -67,11 +67,11 @@ class DockerService:
             tar_filename = f"{prefix}_{safe_image_name}.tar"
             tar_filepath = self.download_dir / tar_filename
 
-            # Save image as tar
+            # Save image as tar with repository tags to preserve image name
             logger.info("Saving image to tar", tar_filename=tar_filename)
             image = client.images.get(image_name)
             with open(tar_filepath, "wb") as f:
-                for chunk in image.save():
+                for chunk in image.save(named=True):
                     f.write(chunk)
             logger.info("Image saved to tar", tar_filepath=str(tar_filepath))
 
