@@ -16,6 +16,8 @@ from src.handlers.admin import create_admin_handlers
 from src.health import HealthServer
 from src.logging_config import configure_logging, get_logger
 from src.middlewares.access import AccessMiddleware
+from src.middlewares.prefix_validation import PrefixValidationMiddleware
+from src.middlewares.service_injection import ServiceInjectionMiddleware
 from src.middlewares.throttle import ThrottleMiddleware
 from src.models.config import Config
 from src.services.compression_service import CompressionService
@@ -51,7 +53,7 @@ configure_logging(log_level=os.getenv("LOG_LEVEL", "INFO"))
 logger = get_logger(__name__)
 
 
-async def setup_bot() -> tuple[Bot, Dispatcher, HealthServer]:
+async def setup_bot() -> tuple[Bot, Dispatcher, HealthServer, Database, DockerService]:
     """Create and configure bot and dispatcher."""
     config = Config()
 
@@ -95,20 +97,21 @@ async def setup_bot() -> tuple[Bot, Dispatcher, HealthServer]:
     # Initialize database
     await database.init()
     await user.set_commands(bot, admin_ids)
-    dp.message.outer_middleware(ThrottleMiddleware(config.throttle_rate, database))
 
-    # Initialize access middleware with services
+    # Register middlewares in order: throttle -> access -> service injection -> prefix validation
+    dp.message.outer_middleware(ThrottleMiddleware(config.throttle_rate, database))
+    dp.message.outer_middleware(AccessMiddleware(database, admin_ids))
     dp.message.outer_middleware(
-        AccessMiddleware(
-            database,
+        ServiceInjectionMiddleware(
+            bot,
             admin_ids,
             download_dir,
-            bot,
-            file_service=file_service,
-            docker_service=docker_service,
-            user_service=user_service,
+            file_service,
+            docker_service,
+            user_service,
         )
     )
+    dp.message.outer_middleware(PrefixValidationMiddleware())
 
     # Register user commands (services injected via middleware)
     dp.message.register(user.cmd_start, Command("start"))
@@ -135,13 +138,13 @@ async def setup_bot() -> tuple[Bot, Dispatcher, HealthServer]:
     health_server = HealthServer(port=config.health_port)
 
     logger.info(f"Bot configured with {len(admin_ids)} admin(s)")
-    return bot, dp, health_server
+    return bot, dp, health_server, database, docker_service
 
 
 async def run_bot() -> None:
     """Run the bot with graceful shutdown."""
     config = Config()
-    bot, dp, health_server, database = (None, None, None, None)
+    bot, dp, health_server, database, docker_service = (None, None, None, None, None)
     shutdown_event = asyncio.Event()
 
     def signal_handler(signum, frame):
@@ -154,10 +157,7 @@ async def run_bot() -> None:
     signal.signal(signal.SIGINT, signal_handler)
 
     try:
-        bot, dp, health_server = await setup_bot()
-
-        # Get database instance for cleanup
-        database = Database(path=config.db_path)
+        bot, dp, health_server, database, docker_service = await setup_bot()
 
         config.download_dir.mkdir(parents=True, exist_ok=True)
 
@@ -195,6 +195,10 @@ async def run_bot() -> None:
     finally:
         logger.info("Initiating cleanup...")
         try:
+            # Cancel Docker operations
+            if docker_service:
+                await docker_service.cancel_all_operations()
+
             # Close database
             if database:
                 await database.close()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tarfile
 import tempfile
 from collections import defaultdict
@@ -119,7 +120,7 @@ class FileService:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         uuid_part = uuid.uuid4().hex[:8]
         archive_name = f"{prefix}_{timestamp}_{uuid_part}.tar.gz"
-        archive_path = self.download_dir / archive_name
+        archive_path = Path(os.path.join(self.download_dir, archive_name))
 
         try:
             # Create tar.gz archive

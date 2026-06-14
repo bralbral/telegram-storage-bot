@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import gzip
+import os
 from pathlib import Path
 
 import docker
@@ -24,6 +25,7 @@ class DockerService:
         """
         self.docker_host = docker_host
         self.download_dir = download_dir
+        self._running_tasks: set[asyncio.Task] = set()
 
     def _pull_image_sync(self, image_name: str) -> None:
         """Synchronously pull Docker image.
@@ -65,7 +67,7 @@ class DockerService:
             # Generate filename
             safe_image_name = image_name.replace("/", "_").replace(":", "_")
             tar_filename = f"{prefix}_{safe_image_name}.tar"
-            tar_filepath = self.download_dir / tar_filename
+            tar_filepath = Path(os.path.join(self.download_dir, tar_filename))
 
             # Save image as tar with repository tags to preserve image name
             logger.info("Saving image to tar", tar_filename=tar_filename)
@@ -83,7 +85,7 @@ class DockerService:
             # Compress to gz using streaming to avoid OOM
             logger.info("Compressing tar file to gzip", tar_filename=tar_filename)
             gz_filename = f"{tar_filename}.gz"
-            gz_filepath = self.download_dir / gz_filename
+            gz_filepath = Path(os.path.join(self.download_dir, gz_filename))
 
             chunk_size = 1024 * 1024  # 1MB chunks
             with open(tar_filepath, "rb") as f_in:
@@ -135,21 +137,41 @@ class DockerService:
         Raises:
             docker.errors.APIError: If pull fails
             Exception: If save fails
+            asyncio.CancelledError: If operation is cancelled during shutdown
         """
         image_name = image_info.image_name
         prefix = image_info.prefix
 
         try:
             # Pull image
-            await asyncio.to_thread(self._pull_image_sync, image_name)
+            pull_task = asyncio.create_task(
+                asyncio.to_thread(self._pull_image_sync, image_name)
+            )
+            self._running_tasks.add(pull_task)
+            try:
+                await pull_task
+            finally:
+                self._running_tasks.discard(pull_task)
 
             # Save image
-            gz_filename = await asyncio.to_thread(
-                self._save_image_sync, image_name, prefix
+            save_task = asyncio.create_task(
+                asyncio.to_thread(self._save_image_sync, image_name, prefix)
             )
+            self._running_tasks.add(save_task)
+            try:
+                gz_filename = await save_task
+            finally:
+                self._running_tasks.discard(save_task)
 
             # Cleanup image
-            await asyncio.to_thread(self._cleanup_image_sync, image_name)
+            cleanup_task = asyncio.create_task(
+                asyncio.to_thread(self._cleanup_image_sync, image_name)
+            )
+            self._running_tasks.add(cleanup_task)
+            try:
+                await cleanup_task
+            finally:
+                self._running_tasks.discard(cleanup_task)
 
             logger.info(
                 "Docker image saved successfully",
@@ -157,6 +179,12 @@ class DockerService:
                 filename=gz_filename,
             )
             return gz_filename
+        except asyncio.CancelledError:
+            logger.info(
+                "Docker operation cancelled during shutdown",
+                image_name=image_name,
+            )
+            raise
         except Exception as e:
             logger.error(
                 "Error processing docker pull",
@@ -187,6 +215,20 @@ class DockerService:
                 )
         finally:
             client.close()
+
+    async def cancel_all_operations(self) -> None:
+        """Cancel all running Docker operations for graceful shutdown."""
+        if not self._running_tasks:
+            return
+
+        logger.info(f"Cancelling {len(self._running_tasks)} running Docker operations")
+        for task in self._running_tasks:
+            task.cancel()
+
+        # Wait for tasks to be cancelled
+        await asyncio.gather(*self._running_tasks, return_exceptions=True)
+        self._running_tasks.clear()
+        logger.info("All Docker operations cancelled")
 
     async def ping(self) -> bool:
         """Check if Docker daemon is accessible.
