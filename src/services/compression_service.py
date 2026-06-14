@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import os
 from pathlib import Path
 
 from src.logging_config import get_logger
@@ -72,7 +73,7 @@ class CompressionService:
             OSError: If file writing fails
         """
         filename = generate_filename(prefix, "gz")
-        filepath = download_dir / filename
+        filepath = Path(os.path.join(download_dir, filename))
         chunk_size = 1024 * 1024  # 1MB chunks
 
         try:
@@ -120,7 +121,7 @@ class CompressionService:
         """
         ext = extract_extension(original_filename)
         filename = generate_filename(prefix, ext)
-        filepath = download_dir / filename
+        filepath = Path(os.path.join(download_dir, filename))
 
         try:
             # Copy file in chunks to avoid loading entire file into memory
