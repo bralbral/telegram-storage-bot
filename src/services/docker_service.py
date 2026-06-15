@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import gzip
 import os
+from datetime import datetime
 from pathlib import Path
 
 import docker
@@ -64,9 +65,10 @@ class DockerService:
         try:
             self.download_dir.mkdir(parents=True, exist_ok=True)
 
-            # Generate filename
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_image_name = image_name.replace("/", "_").replace(":", "_")
-            tar_filename = f"{prefix}_{safe_image_name}.tar"
+            tar_filename = f"{prefix}_{timestamp}_{safe_image_name}.tar"
             tar_filepath = Path(os.path.join(self.download_dir, tar_filename))
 
             # Save image as tar with repository tags to preserve image name
