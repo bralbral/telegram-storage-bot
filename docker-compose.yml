@@ -1,0 +1,59 @@
+services:
+  telegram-bot-api:
+    image: ghcr.io/lukaszraczylo/tdlib-telegram-bot-api-docker/telegram-api-server:1.0.312
+    container_name: telegram-bot-api
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_API_ID=${TELEGRAM_API_ID}
+      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+      - TELEGRAM_LOCAL=true
+    volumes:
+      - ./telegram-local-api:/telegram-local-api
+    command:
+      --http-port 8081
+      --http-stat-port 8082
+      --local
+      --dir /telegram-local-api
+      --log-max-file-size 104857600
+      --verbosity 3
+    healthcheck:
+      test: ["CMD", "sh", "-c", "netstat -tlnp | grep :8081 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  storage-bot:
+    build: .
+    container_name: storage-bot
+    privileged: true
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - ALL
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_IDS=${ADMIN_IDS}
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - USE_LOCAL_API=${USE_LOCAL_API:-true}
+      - LOCAL_API_URL=${LOCAL_API_URL:-http://telegram-bot-api:8081}
+      - HEALTH_PORT=${HEALTH_PORT:-8080}
+    ports:
+      - "${HEALTH_PORT:-8080}:${HEALTH_PORT:-8080}"
+    volumes:
+      - ./telegram-local-api:/telegram-local-api:ro
+      - ./downloads:/downloads
+      # copy from container after first run
+      # - ./users.db:/app/users.db
+    depends_on:
+      telegram-bot-api:
+        condition: service_healthy
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:${HEALTH_PORT:-8080}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
