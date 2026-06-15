@@ -1,4 +1,4 @@
-aiogram==3.28.2
+aiogram==3.29.0
 aiosqlite==0.22.1
 aiofiles==25.1.0
 docker==7.1.0
