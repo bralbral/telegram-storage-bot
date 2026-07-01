@@ -33,6 +33,27 @@ class CompressionService:
     """Service for file compression operations."""
 
     @staticmethod
+    def _stream_copy(
+        source_path: Path,
+        dest_path: Path,
+        chunk_size: int = 1024 * 1024,
+    ) -> None:
+        """Stream copy file in chunks to avoid loading entire file into memory.
+
+        Args:
+            source_path: Path to the source file
+            dest_path: Path to the destination file
+            chunk_size: Size of chunks to read/write (default: 1MB)
+        """
+        with open(source_path, "rb") as f_in:
+            with open(dest_path, "wb") as f_out:
+                while True:
+                    chunk = f_in.read(chunk_size)
+                    if not chunk:
+                        break
+                    f_out.write(chunk)
+
+    @staticmethod
     def is_already_compressed(filename: str) -> bool:
         """Check if file has a compressed extension.
 
@@ -79,15 +100,14 @@ class CompressionService:
         try:
             with open(source_path, "rb") as f_in:
                 with open(filepath, "wb") as f_out:
-                    gzip_file = gzip.GzipFile(
+                    with gzip.GzipFile(
                         fileobj=f_out, mode="wb", filename=original_filename or "file"
-                    )
-                    while True:
-                        chunk = f_in.read(chunk_size)
-                        if not chunk:
-                            break
-                        gzip_file.write(chunk)
-                    gzip_file.close()
+                    ) as gzip_file:
+                        while True:
+                            chunk = f_in.read(chunk_size)
+                            if not chunk:
+                                break
+                            gzip_file.write(chunk)
             logger.info(
                 "File compressed",
                 filename=filename,
@@ -125,14 +145,7 @@ class CompressionService:
 
         try:
             # Copy file in chunks to avoid loading entire file into memory
-            chunk_size = 1024 * 1024  # 1MB chunks
-            with open(source_path, "rb") as f_in:
-                with open(filepath, "wb") as f_out:
-                    while True:
-                        chunk = f_in.read(chunk_size)
-                        if not chunk:
-                            break
-                        f_out.write(chunk)
+            self._stream_copy(source_path, filepath)
             logger.info(
                 "File saved",
                 filename=filename,

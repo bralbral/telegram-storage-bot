@@ -92,13 +92,12 @@ class DockerService:
             chunk_size = 1024 * 1024  # 1MB chunks
             with open(tar_filepath, "rb") as f_in:
                 with open(gz_filepath, "wb") as f_out:
-                    gzip_file = gzip.GzipFile(fileobj=f_out, mode="wb")
-                    while True:
-                        chunk = f_in.read(chunk_size)
-                        if not chunk:
-                            break
-                        gzip_file.write(chunk)
-                    gzip_file.close()
+                    with gzip.GzipFile(fileobj=f_out, mode="wb") as gzip_file:
+                        while True:
+                            chunk = f_in.read(chunk_size)
+                            if not chunk:
+                                break
+                            gzip_file.write(chunk)
 
             # Clean up original tar file
             tar_filepath.unlink()

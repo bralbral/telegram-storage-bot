@@ -166,13 +166,21 @@ async def cmd_drop(message: Message, **kwargs) -> None:
                 archive=archive_name,
                 count=len(buffer),
             )
+        except asyncio.CancelledError:
+            logger.info(
+                "Archive operation cancelled during shutdown",
+                user_id=user_id,
+            )
+            raise
         except Exception as e:
             logger.error(
                 "Failed to save buffer as archive", user_id=user_id, error=str(e)
             )
             await message.reply("❌ Failed to save archive. Please try again.")
 
-    asyncio.create_task(process_archive())
+    task = asyncio.create_task(process_archive())
+    file_service._running_tasks.add(task)
+    task.add_done_callback(lambda t: file_service._running_tasks.discard(t))
 
 
 async def set_commands(
