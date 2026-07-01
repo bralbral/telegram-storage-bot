@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import tarfile
 import tempfile
+import uuid
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 
 from aiogram import Bot
@@ -35,6 +38,8 @@ class FileService:
         self.download_dir = download_dir
         # File buffer storage: {user_id: [FileInfo]}
         self.file_buffer: dict[int, list[FileInfo]] = defaultdict(list)
+        # Track running archive tasks for graceful shutdown
+        self._running_tasks: set[asyncio.Task] = set()
 
     def add_to_buffer(self, user_id: int, file_info: FileInfo) -> int:
         """Add file to user's buffer.
@@ -108,10 +113,8 @@ class FileService:
 
         Raises:
             Exception: If archive creation fails
+            asyncio.CancelledError: If operation is cancelled during shutdown
         """
-        import uuid
-        from datetime import datetime
-
         buffer = self.file_buffer.get(user_id, [])
 
         if not buffer:
@@ -259,3 +262,17 @@ class FileService:
             # Clean up temp file
             if source_path.exists():
                 source_path.unlink()
+
+    async def cancel_all_operations(self) -> None:
+        """Cancel all running archive operations for graceful shutdown."""
+        if not self._running_tasks:
+            return
+
+        logger.info(f"Cancelling {len(self._running_tasks)} running archive operations")
+        for task in self._running_tasks:
+            task.cancel()
+
+        # Wait for tasks to be cancelled
+        await asyncio.gather(*self._running_tasks, return_exceptions=True)
+        self._running_tasks.clear()
+        logger.info("All archive operations cancelled")

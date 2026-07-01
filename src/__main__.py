@@ -53,7 +53,7 @@ configure_logging(log_level=os.getenv("LOG_LEVEL", "INFO"))
 logger = get_logger(__name__)
 
 
-async def setup_bot() -> tuple[Bot, Dispatcher, HealthServer, Database, DockerService]:
+async def setup_bot() -> tuple[Bot, Dispatcher, HealthServer, Database, DockerService, FileService]:
     """Create and configure bot and dispatcher."""
     config = Config()
 
@@ -138,13 +138,12 @@ async def setup_bot() -> tuple[Bot, Dispatcher, HealthServer, Database, DockerSe
     health_server = HealthServer(port=config.health_port)
 
     logger.info(f"Bot configured with {len(admin_ids)} admin(s)")
-    return bot, dp, health_server, database, docker_service
+    return bot, dp, health_server, database, docker_service, file_service
 
 
 async def run_bot() -> None:
     """Run the bot with graceful shutdown."""
-    config = Config()
-    bot, dp, health_server, database, docker_service = (None, None, None, None, None)
+    bot, dp, health_server, database, docker_service, file_service = (None, None, None, None, None, None)
     shutdown_event = asyncio.Event()
 
     def signal_handler(signum, frame):
@@ -157,9 +156,7 @@ async def run_bot() -> None:
     signal.signal(signal.SIGINT, signal_handler)
 
     try:
-        bot, dp, health_server, database, docker_service = await setup_bot()
-
-        config.download_dir.mkdir(parents=True, exist_ok=True)
+        bot, dp, health_server, database, docker_service, file_service = await setup_bot()
 
         # Start health check server
         await health_server.start()
@@ -198,6 +195,10 @@ async def run_bot() -> None:
             # Cancel Docker operations
             if docker_service:
                 await docker_service.cancel_all_operations()
+
+            # Cancel archive operations
+            if file_service:
+                await file_service.cancel_all_operations()
 
             # Close database
             if database:
