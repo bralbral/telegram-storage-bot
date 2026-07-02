@@ -180,49 +180,41 @@ class FileService:
         Returns:
             FileInfo if message contains a file, None otherwise
         """
-        file_id: str | None = None
-        original_filename: str = ""
-        file_size: int | None = None
-        file_type: str = ""
+        # File type mapping: (attribute_name, default_filename, file_type)
+        file_types = [
+            ("document", "document", "document"),
+            ("photo", "photo.jpg", "photo"),
+            ("video", "video.mp4", "video"),
+            ("audio", "audio.mp3", "audio"),
+            ("voice", "voice.ogg", "voice"),
+            ("animation", "animation.gif", "animation"),
+        ]
 
-        if message.document:
-            file_id = message.document.file_id
-            original_filename = message.document.file_name or "document"
-            file_size = message.document.file_size
-            file_type = "document"
-        elif message.photo:
-            file_id = message.photo[-1].file_id
-            original_filename = "photo.jpg"
-            file_size = message.photo[-1].file_size
-            file_type = "photo"
-        elif message.video:
-            file_id = message.video.file_id
-            original_filename = message.video.file_name or "video.mp4"
-            file_size = message.video.file_size
-            file_type = "video"
-        elif message.audio:
-            file_id = message.audio.file_id
-            original_filename = message.audio.file_name or "audio.mp3"
-            file_size = message.audio.file_size
-            file_type = "audio"
-        elif message.voice:
-            file_id = message.voice.file_id
-            original_filename = "voice.ogg"
-            file_size = message.voice.file_size
-            file_type = "voice"
-        elif message.animation:
-            file_id = message.animation.file_id
-            original_filename = message.animation.file_name or "animation.gif"
-            file_size = message.animation.file_size
-            file_type = "animation"
+        for attr_name, default_filename, file_type in file_types:
+            attr = getattr(message, attr_name, None)
+            if not attr:
+                continue
 
-        if file_id:
+            # Handle photo array
+            if attr_name == "photo":
+                attr = attr[-1]
+
+            file_id = attr.file_id
+            file_size = attr.file_size
+
+            # Get filename if available
+            if hasattr(attr, "file_name") and attr.file_name:
+                original_filename = attr.file_name
+            else:
+                original_filename = default_filename
+
             return FileInfo(
                 file_id=file_id,
                 filename=original_filename,
                 file_size=file_size,
                 file_type=file_type,
             )
+
         return None
 
     async def process_file(

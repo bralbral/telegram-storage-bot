@@ -9,6 +9,9 @@ from src.utils.naming import extract_extension, generate_filename
 
 logger = get_logger(__name__)
 
+# Chunk size for streaming operations (1MB)
+DEFAULT_CHUNK_SIZE = 1024 * 1024
+
 # Already compressed file extensions
 COMPRESSED_EXTENSIONS = {
     ".gz",
@@ -36,7 +39,7 @@ class CompressionService:
     def _stream_copy(
         source_path: Path,
         dest_path: Path,
-        chunk_size: int = 1024 * 1024,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
     ) -> None:
         """Stream copy file in chunks to avoid loading entire file into memory.
 
@@ -95,7 +98,6 @@ class CompressionService:
         """
         filename = generate_filename(prefix, "gz")
         filepath = Path(os.path.join(download_dir, filename))
-        chunk_size = 1024 * 1024  # 1MB chunks
 
         try:
             with open(source_path, "rb") as f_in:
@@ -104,7 +106,7 @@ class CompressionService:
                         fileobj=f_out, mode="wb", filename=original_filename or "file"
                     ) as gzip_file:
                         while True:
-                            chunk = f_in.read(chunk_size)
+                            chunk = f_in.read(DEFAULT_CHUNK_SIZE)
                             if not chunk:
                                 break
                             gzip_file.write(chunk)
@@ -145,7 +147,7 @@ class CompressionService:
 
         try:
             # Copy file in chunks to avoid loading entire file into memory
-            self._stream_copy(source_path, filepath)
+            CompressionService._stream_copy(source_path, filepath)
             logger.info(
                 "File saved",
                 filename=filename,

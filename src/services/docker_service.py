@@ -5,6 +5,7 @@ import gzip
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import docker
 
@@ -12,6 +13,9 @@ from src.logging_config import get_logger
 from src.models.docker import DockerImageInfo
 
 logger = get_logger(__name__)
+
+# Chunk size for streaming operations (1MB)
+DEFAULT_CHUNK_SIZE = 1024 * 1024
 
 
 class DockerService:
@@ -27,6 +31,26 @@ class DockerService:
         self.docker_host = docker_host
         self.download_dir = download_dir
         self._running_tasks: set[asyncio.Task] = set()
+
+    async def _run_tracked_task(self, sync_func, *args) -> Any:
+        """Run a synchronous function in a tracked task.
+
+        Args:
+            sync_func: Synchronous function to run
+            *args: Arguments to pass to the function
+
+        Returns:
+            Result of the function
+
+        Raises:
+            asyncio.CancelledError: If operation is cancelled during shutdown
+        """
+        task = asyncio.create_task(asyncio.to_thread(sync_func, *args))
+        self._running_tasks.add(task)
+        try:
+            return await task
+        finally:
+            self._running_tasks.discard(task)
 
     def _pull_image_sync(self, image_name: str) -> None:
         """Synchronously pull Docker image.
@@ -89,12 +113,11 @@ class DockerService:
             gz_filename = f"{tar_filename}.gz"
             gz_filepath = Path(os.path.join(self.download_dir, gz_filename))
 
-            chunk_size = 1024 * 1024  # 1MB chunks
             with open(tar_filepath, "rb") as f_in:
                 with open(gz_filepath, "wb") as f_out:
                     with gzip.GzipFile(fileobj=f_out, mode="wb") as gzip_file:
                         while True:
-                            chunk = f_in.read(chunk_size)
+                            chunk = f_in.read(DEFAULT_CHUNK_SIZE)
                             if not chunk:
                                 break
                             gzip_file.write(chunk)
@@ -145,34 +168,15 @@ class DockerService:
 
         try:
             # Pull image
-            pull_task = asyncio.create_task(
-                asyncio.to_thread(self._pull_image_sync, image_name)
-            )
-            self._running_tasks.add(pull_task)
-            try:
-                await pull_task
-            finally:
-                self._running_tasks.discard(pull_task)
+            await self._run_tracked_task(self._pull_image_sync, image_name)
 
             # Save image
-            save_task = asyncio.create_task(
-                asyncio.to_thread(self._save_image_sync, image_name, prefix)
+            gz_filename = await self._run_tracked_task(
+                self._save_image_sync, image_name, prefix
             )
-            self._running_tasks.add(save_task)
-            try:
-                gz_filename = await save_task
-            finally:
-                self._running_tasks.discard(save_task)
 
             # Cleanup image
-            cleanup_task = asyncio.create_task(
-                asyncio.to_thread(self._cleanup_image_sync, image_name)
-            )
-            self._running_tasks.add(cleanup_task)
-            try:
-                await cleanup_task
-            finally:
-                self._running_tasks.discard(cleanup_task)
+            await self._run_tracked_task(self._cleanup_image_sync, image_name)
 
             logger.info(
                 "Docker image saved successfully",
