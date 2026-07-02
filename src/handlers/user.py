@@ -6,6 +6,7 @@ from aiogram.filters import CommandObject
 from aiogram.types import BotCommand, BotCommandScopeChat, Message
 
 from src.logging_config import get_logger
+from src.utils.size_utils import bytes_to_mb
 
 logger = get_logger(__name__)
 
@@ -101,11 +102,10 @@ async def cmd_buffer(message: Message, **kwargs) -> None:
         return
 
     total_size = file_service.get_buffer_size(user_id)
-    size_mb = total_size / (1024 * 1024) if total_size else 0
 
     files_list = "\n".join(
         [
-            f"• {f.file_type}: {f.filename} ({int(f.file_size or 0) / (1024 * 1024):.1f} MB)"
+            f"• {f.file_type}: {f.filename} ({bytes_to_mb(f.file_size):.1f} MB)"
             if f.file_size
             else f"• {f.file_type}: {f.filename}"
             for f in buffer
@@ -114,7 +114,7 @@ async def cmd_buffer(message: Message, **kwargs) -> None:
 
     await message.answer(
         f"📦 Buffer: {len(buffer)} file(s)\n"
-        f"📊 Total size: {size_mb:.1f} MB\n\n"
+        f"📊 Total size: {bytes_to_mb(total_size):.1f} MB\n\n"
         f"{files_list}\n\n"
         f"Use /drop to save all or /clear to empty buffer."
     )

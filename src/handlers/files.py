@@ -7,6 +7,7 @@ from aiogram.types import Message
 
 from src.logging_config import get_logger
 from src.services.file_service import FileService
+from src.utils.size_utils import bytes_to_gb
 
 logger = get_logger(__name__)
 
@@ -29,7 +30,7 @@ async def handle_file(
                 file_size=file_info.file_size,
             )
             await message.reply(
-                f"❌ File too large. Maximum size is {max_file_size / (1024 * 1024 * 1024):.1f}GB."
+                f"❌ File too large. Maximum size is {bytes_to_gb(max_file_size):.1f}GB."
             )
             return
 

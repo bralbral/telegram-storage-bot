@@ -13,6 +13,9 @@ from src.services.docker_service import DockerService
 
 logger = get_logger(__name__)
 
+# Maximum Docker image name length
+MAX_DOCKER_IMAGE_NAME_LENGTH = 128
+
 
 def register_text_handlers(dp: Any, docker_service: DockerService) -> None:
     """Register text message handlers with the dispatcher."""
@@ -63,7 +66,7 @@ def register_text_handlers(dp: Any, docker_service: DockerService) -> None:
             prefix = user_data[0] or ""
 
             # Validate image name (basic validation)
-            if not image_name or len(image_name) > 128:
+            if not image_name or len(image_name) > MAX_DOCKER_IMAGE_NAME_LENGTH:
                 await message.answer("❌ Invalid Docker image name")
                 return
 
@@ -75,8 +78,12 @@ def register_text_handlers(dp: Any, docker_service: DockerService) -> None:
             # Create DockerImageInfo
             image_info = DockerImageInfo(image_name=image_name, prefix=prefix)
 
-            # Process in background without task queue
-            asyncio.create_task(handle_docker_pull(message, docker_service, image_info))
+            # Process in background with task tracking
+            task = asyncio.create_task(
+                handle_docker_pull(message, docker_service, image_info)
+            )
+            docker_service._running_tasks.add(task)
+            task.add_done_callback(lambda t: docker_service._running_tasks.discard(t))
         else:
             # Not a docker pull command, ignore
             pass

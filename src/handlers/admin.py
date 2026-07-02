@@ -9,6 +9,8 @@ from aiogram.types import Message
 
 from src.logging_config import get_logger
 from src.models.config import Config
+from src.services.user_service import UserService
+from src.utils.decorators import admin_only, inject_service
 
 logger = get_logger(__name__)
 
@@ -23,19 +25,12 @@ def create_admin_handlers(
 ]:
     """Create admin command handlers with dependencies injected."""
 
-    async def cmd_add_user(message: Message, command: CommandObject, **kwargs) -> None:
+    @admin_only(admin_ids)
+    @inject_service("user_service")
+    async def cmd_add_user(
+        message: Message, user_service: UserService, command: CommandObject, **kwargs
+    ) -> None:
         """Admin only: Add a user to the database with optional prefix."""
-        user_service = kwargs.get("user_service")
-        if not user_service:
-            raise RuntimeError("user_service not provided in kwargs")
-
-        if message.from_user.id not in admin_ids:
-            logger.warning(
-                "Unauthorized admin command attempt",
-                user_id=message.from_user.id,
-            )
-            return
-
         if not command.args:
             await message.answer("Usage: /add_user <telegram_id> [prefix]")
             return
@@ -70,21 +65,12 @@ def create_admin_handlers(
             await message.answer("❌ Failed to add user")
             logger.error("Failed to add user", error=str(e))
 
+    @admin_only(admin_ids)
+    @inject_service("user_service")
     async def cmd_remove_user(
-        message: Message, command: CommandObject, **kwargs
+        message: Message, user_service: UserService, command: CommandObject, **kwargs
     ) -> None:
         """Admin only: Remove a user from the database."""
-        user_service = kwargs.get("user_service")
-        if not user_service:
-            raise RuntimeError("user_service not provided in kwargs")
-
-        if message.from_user.id not in admin_ids:
-            logger.warning(
-                "Unauthorized admin command attempt",
-                user_id=message.from_user.id,
-            )
-            return
-
         if not command.args:
             await message.answer("Usage: /remove_user <telegram_id>")
             return
@@ -105,19 +91,12 @@ def create_admin_handlers(
             await message.answer("❌ Failed to remove user")
             logger.error("Failed to remove user", error=str(e))
 
-    async def cmd_list_users(message: Message, **kwargs) -> None:
+    @admin_only(admin_ids)
+    @inject_service("user_service")
+    async def cmd_list_users(
+        message: Message, user_service: UserService, **kwargs
+    ) -> None:
         """Admin only: List all users with their prefixes."""
-        user_service = kwargs.get("user_service")
-        if not user_service:
-            raise RuntimeError("user_service not provided in kwargs")
-
-        if message.from_user.id not in admin_ids:
-            logger.warning(
-                "Unauthorized admin command attempt",
-                user_id=message.from_user.id,
-            )
-            return
-
         try:
             users = await user_service.get_all_users()
 
@@ -138,19 +117,10 @@ def create_admin_handlers(
             await message.answer("❌ Failed to list users")
             logger.error("Failed to list users", error=str(e))
 
-    async def cmd_status(message: Message, **kwargs) -> None:
+    @admin_only(admin_ids)
+    @inject_service("user_service")
+    async def cmd_status(message: Message, user_service: UserService, **kwargs) -> None:
         """Admin only: Show bot status and system information."""
-        user_service = kwargs.get("user_service")
-        if not user_service:
-            raise RuntimeError("user_service not provided in kwargs")
-
-        if message.from_user.id not in admin_ids:
-            logger.warning(
-                "Unauthorized admin command attempt",
-                user_id=message.from_user.id,
-            )
-            return
-
         try:
             users = await user_service.get_all_users()
             uptime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
