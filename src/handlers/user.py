@@ -20,10 +20,11 @@ async def cmd_start(message: Message, **kwargs) -> None:
     prefix = user_data[0] or ""
     try:
         await message.answer(
-            f"👋 Hello! Your prefix: `{prefix or 'not set'}`\n\n"
+            f"👋 Hello! Your prefix: <code>{prefix or 'not set'}</code>\n\n"
             "Send files to save them as gzip\n"
             "Use /set_prefix to set your file prefix\n\n"
-            "You can also pull Docker images by sending: `docker pull image_name:tag`"
+            "You can also pull Docker images by sending: <code>docker pull image_name:tag</code>",
+            parse_mode="HTML",
         )
         logger.info("User started bot", user_id=message.from_user.id)
 
