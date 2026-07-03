@@ -53,7 +53,7 @@ def inject_service(service_name: str):
             service = kwargs.get(service_name)
             if not service:
                 raise RuntimeError(f"{service_name} not provided in kwargs")
-            return await handler(message, service, *args, **kwargs)
+            return await handler(message, *args, **{service_name: service, **kwargs})
 
         return wrapper
 
