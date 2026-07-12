@@ -21,9 +21,10 @@ async def cmd_start(message: Message, **kwargs) -> None:
     try:
         await message.answer(
             f"👋 Hello! Your prefix: <code>{prefix or 'not set'}</code>\n\n"
-            "Send files to save them as gzip\n"
+            "Send files to save them as an archive\n"
+            "Or send <code>docker pull image_name:tag</code> to save a Docker image\n"
             "Use /set_prefix to set your file prefix\n\n"
-            "You can also pull Docker images by sending: <code>docker pull image_name:tag</code>",
+            "Use /buffer to review queued files and /drop to create the archive.",
             parse_mode="HTML",
         )
         logger.info("User started bot", user_id=message.from_user.id)
@@ -97,20 +98,21 @@ async def cmd_buffer(message: Message, **kwargs) -> None:
         raise RuntimeError("file_service not provided in kwargs")
 
     user_id = message.from_user.id
-    buffer = file_service.get_buffer(user_id)
+    buffer = await file_service.get_buffer(user_id)
 
     if not buffer:
         await message.answer("📭 Buffer is empty. Send files to add them.")
         return
 
-    total_size = file_service.get_buffer_size(user_id)
+    total_size = file_service.get_buffer_size(buffer)
 
     files_list = "\n".join(
         [
-            f"• {f.file_type}: {f.filename} ({bytes_to_mb(f.file_size):.1f} MB)"
-            if f.file_size
-            else f"• {f.file_type}: {f.filename}"
-            for f in buffer
+            f"• {item.file_info.file_type}: {item.file_info.filename} "
+            f"({bytes_to_mb(item.file_info.file_size):.1f} MB)"
+            if item.file_info.file_size
+            else f"• {item.file_info.file_type}: {item.file_info.filename}"
+            for item in buffer
         ]
     )
 
@@ -130,7 +132,11 @@ async def cmd_clear(message: Message, **kwargs) -> None:
         raise RuntimeError("file_service not provided in kwargs")
 
     user_id = message.from_user.id
-    count = file_service.clear_buffer(user_id)
+    try:
+        count = await file_service.clear_buffer(user_id)
+    except RuntimeError as e:
+        await message.answer(f"❌ {e}")
+        return
 
     await message.answer(f"🗑️ Buffer cleared ({count} file(s) removed).")
     logger.info("User cleared buffer", user_id=user_id, removed=count)
@@ -146,27 +152,38 @@ async def cmd_drop(message: Message, **kwargs) -> None:
         raise RuntimeError("file_service or bot not provided in kwargs")
 
     user_id = message.from_user.id
-    buffer = file_service.get_buffer(user_id)
-
-    if not buffer:
+    try:
+        buffer = await file_service.begin_archive(user_id)
+    except ValueError:
         await message.answer("📭 Buffer is empty. Send files first.")
+        return
+    except RuntimeError:
+        await message.answer("⏳ Archive creation is already in progress. Please wait.")
         return
 
     prefix = user_data[0] or ""
+    logger.info("Archive requested", user_id=user_id, file_count=len(buffer))
     await message.reply(f"⏳ Processing {len(buffer)} file(s)...")
 
     async def process_archive() -> None:
         """Process archive creation in background."""
         try:
-            archive_name = await file_service.create_archive_from_buffer(
-                user_id, prefix, bot
+            (
+                archive_name,
+                archived_count,
+                failed_count,
+            ) = await file_service.create_archive_from_buffer(
+                user_id, prefix, bot, buffer
             )
-            await message.reply(f"✅ Archive saved: {archive_name}")
+            result = f"✅ Archive saved: {archive_name} ({archived_count} file(s))"
+            if failed_count:
+                result += f"\n⚠️ {failed_count} file(s) failed and remain in the buffer."
+            await message.reply(result)
             logger.info(
                 "Buffer saved as archive",
                 user_id=user_id,
                 archive=archive_name,
-                count=len(buffer),
+                count=archived_count,
             )
         except asyncio.CancelledError:
             logger.info(

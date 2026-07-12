@@ -18,13 +18,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 
 # Create download directory
-RUN mkdir -p /var/lib/downloads
+RUN mkdir -p /downloads /app/data
 
 # Environment variables
 ENV DOCKER_HOST=unix:///var/run/docker.sock
 ENV PYTHONUNBUFFERED=1
+ENV DOWNLOAD_DIR=/downloads
+ENV DB_PATH=/app/data/users.db
 
 # Start Docker daemon using official entrypoint, then run the bot
 # dockerd-entrypoint.sh already sets up Docker daemon correctly
 # dockerd logs redirected to file to keep only application logs in docker logs
-CMD ["dockerd-entrypoint.sh", "sh", "-c", "dockerd >/var/log/dockerd.log 2>&1 & sleep 5 && python -m src"]
+CMD ["dockerd-entrypoint.sh", "sh", "-c", "dockerd >/var/log/dockerd.log 2>&1 & until docker info >/dev/null 2>&1; do sleep 1; done; exec python -m src"]

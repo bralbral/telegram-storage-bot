@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 
 import docker
@@ -29,10 +30,16 @@ class HealthServer:
         }
 
         # Check Docker daemon status
-        try:
+        def ping_docker() -> None:
             docker_host = os.getenv("DOCKER_HOST", "unix:///var/run/docker.sock")
             client = docker.DockerClient(base_url=docker_host)
-            client.ping()
+            try:
+                client.ping()
+            finally:
+                client.close()
+
+        try:
+            await asyncio.wait_for(asyncio.to_thread(ping_docker), timeout=2)
             health_data["docker"] = {
                 "status": "healthy",
                 "message": "Docker daemon is running",

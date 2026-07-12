@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import time
+from collections import OrderedDict
 from collections.abc import Awaitable
 from typing import Any, Callable
 
 from aiogram.dispatcher.middlewares.base import BaseMiddleware
 from aiogram.types import Message
 
-from src.db.database import Database
 from src.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -16,12 +16,11 @@ logger = get_logger(__name__)
 class ThrottleMiddleware(BaseMiddleware):
     """Rate limiting middleware - limits actions only for users not in database."""
 
-    __slots__ = ("rate", "user_last_action", "db")
+    __slots__ = ("rate", "user_last_action")
 
-    def __init__(self, rate: float, db: Database | None = None):
+    def __init__(self, rate: float):
         self.rate = rate
-        self.user_last_action: dict[int, float] = {}
-        self.db = db
+        self.user_last_action: OrderedDict[int, float] = OrderedDict()
 
     async def __call__(
         self,
@@ -34,20 +33,8 @@ class ThrottleMiddleware(BaseMiddleware):
         current_time = time.time()
 
         try:
-            # Skip throttling if user is in database
-            if self.db:
-                try:
-                    user_data = await self.db.get_user(user_id)
-                    if user_data:
-                        # User is in database, no throttling
-                        return await handler(event, data)
-                except Exception as e:
-                    logger.warning(
-                        "Failed to check user in database for throttling",
-                        user_id=user_id,
-                        error=str(e),
-                    )
-                    # On DB error, allow action to avoid blocking
+            if data.get("is_registered", False):
+                return await handler(event, data)
 
             last_action = self.user_last_action.get(user_id, 0)
             time_since_last = current_time - last_action
@@ -67,6 +54,9 @@ class ThrottleMiddleware(BaseMiddleware):
 
             # Update last action time
             self.user_last_action[user_id] = current_time
+            self.user_last_action.move_to_end(user_id)
+            while len(self.user_last_action) > 10_000:
+                self.user_last_action.popitem(last=False)
             return await handler(event, data)
         except Exception as e:
             logger.error("Error in throttle middleware", user_id=user_id, error=str(e))

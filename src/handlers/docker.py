@@ -27,9 +27,6 @@ def register_text_handlers(dp: Any, docker_service: DockerService) -> None:
     ) -> None:
         """Handle docker pull command."""
         try:
-            # Cleanup before pull
-            await docker_service.cleanup_before_pull(image_info.image_name)
-
             await message.reply(f"🐳 Downloading {image_info.image_name}...")
             gz_filename = await docker_service.pull_and_save_image(image_info)
             await message.reply(f"✅ Docker image saved: {gz_filename}")
@@ -73,6 +70,7 @@ def register_text_handlers(dp: Any, docker_service: DockerService) -> None:
             logger.info(
                 "Processing docker pull",
                 image_name=image_name,
+                user_id=message.from_user.id,
             )
 
             # Create DockerImageInfo

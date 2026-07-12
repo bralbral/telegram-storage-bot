@@ -6,18 +6,28 @@ import tarfile
 import tempfile
 import uuid
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from aiogram import Bot
 from aiogram.types import Message
 
+from src.db.database import Database
 from src.logging_config import get_logger
 from src.models.file_info import FileInfo
 from src.services.compression_service import CompressionService
 from src.utils.file_utils import detect_image_format
 
 logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class BufferedFile:
+    """A persisted file queued for archive creation."""
+
+    id: int
+    file_info: FileInfo
 
 
 class FileService:
@@ -27,6 +37,9 @@ class FileService:
         self,
         compression_service: CompressionService,
         download_dir: Path,
+        database: Database,
+        max_buffer_files: int,
+        max_buffer_size: int,
     ) -> None:
         """Initialize file service.
 
@@ -36,12 +49,15 @@ class FileService:
         """
         self.compression_service = compression_service
         self.download_dir = download_dir
-        # File buffer storage: {user_id: [FileInfo]}
-        self.file_buffer: dict[int, list[FileInfo]] = defaultdict(list)
+        self.database = database
+        self.max_buffer_files = max_buffer_files
+        self.max_buffer_size = max_buffer_size
+        self._user_locks: defaultdict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._archiving_users: set[int] = set()
         # Track running archive tasks for graceful shutdown
         self._running_tasks: set[asyncio.Task] = set()
 
-    def add_to_buffer(self, user_id: int, file_info: FileInfo) -> int:
+    async def add_to_buffer(self, user_id: int, file_info: FileInfo) -> int:
         """Add file to user's buffer.
 
         Args:
@@ -51,8 +67,22 @@ class FileService:
         Returns:
             Number of files in buffer after adding
         """
-        self.file_buffer[user_id].append(file_info)
-        buffer_count = len(self.file_buffer[user_id])
+        async with self._user_locks[user_id]:
+            if user_id in self._archiving_users:
+                raise RuntimeError("Archive creation is already in progress")
+            buffer_count, buffer_size = await self.database.get_buffer_stats(user_id)
+            if buffer_count >= self.max_buffer_files:
+                raise ValueError(f"Buffer limit is {self.max_buffer_files} files")
+            if buffer_size + (file_info.file_size or 0) > self.max_buffer_size:
+                raise ValueError("Buffer size limit would be exceeded")
+            await self.database.add_buffered_file(
+                user_id,
+                file_info.file_id,
+                file_info.filename,
+                file_info.file_size,
+                file_info.file_type,
+            )
+            buffer_count += 1
         logger.info(
             "File added to buffer",
             user_id=user_id,
@@ -61,7 +91,7 @@ class FileService:
         )
         return buffer_count
 
-    def get_buffer(self, user_id: int) -> list[FileInfo]:
+    async def get_buffer(self, user_id: int) -> list[BufferedFile]:
         """Get user's buffer contents.
 
         Args:
@@ -70,9 +100,21 @@ class FileService:
         Returns:
             List of files in buffer
         """
-        return self.file_buffer.get(user_id, [])
+        rows = await self.database.get_buffered_files(user_id)
+        return [
+            BufferedFile(
+                id=row_id,
+                file_info=FileInfo(
+                    file_id=file_id,
+                    filename=filename,
+                    file_size=file_size,
+                    file_type=file_type,
+                ),
+            )
+            for row_id, file_id, filename, file_size, file_type in rows
+        ]
 
-    def clear_buffer(self, user_id: int) -> int:
+    async def clear_buffer(self, user_id: int) -> int:
         """Clear user's buffer.
 
         Args:
@@ -81,12 +123,15 @@ class FileService:
         Returns:
             Number of files removed
         """
-        count = len(self.file_buffer.get(user_id, []))
-        self.file_buffer[user_id] = []
+        async with self._user_locks[user_id]:
+            if user_id in self._archiving_users:
+                raise RuntimeError("Archive creation is already in progress")
+            count = await self.database.clear_buffered_files(user_id)
         logger.info("Buffer cleared", user_id=user_id, removed=count)
         return count
 
-    def get_buffer_size(self, user_id: int) -> int:
+    @staticmethod
+    def get_buffer_size(buffer: list[BufferedFile]) -> int:
         """Get total size of files in user's buffer.
 
         Args:
@@ -95,12 +140,22 @@ class FileService:
         Returns:
             Total size in bytes
         """
-        buffer = self.file_buffer.get(user_id, [])
-        return sum(int(f.file_size or 0) for f in buffer)
+        return sum(int(item.file_info.file_size or 0) for item in buffer)
+
+    async def begin_archive(self, user_id: int) -> list[BufferedFile]:
+        """Reserve a user's buffer so concurrent /drop and /clear cannot race."""
+        async with self._user_locks[user_id]:
+            if user_id in self._archiving_users:
+                raise RuntimeError("Archive creation is already in progress")
+            buffer = await self.get_buffer(user_id)
+            if not buffer:
+                raise ValueError("Buffer is empty")
+            self._archiving_users.add(user_id)
+            return buffer
 
     async def create_archive_from_buffer(
-        self, user_id: int, prefix: str, bot: Bot
-    ) -> str:
+        self, user_id: int, prefix: str, bot: Bot, buffer: list[BufferedFile]
+    ) -> tuple[str, int, int]:
         """Create tar.gz archive from user's buffer.
 
         Args:
@@ -115,53 +170,59 @@ class FileService:
             Exception: If archive creation fails
             asyncio.CancelledError: If operation is cancelled during shutdown
         """
-        buffer = self.file_buffer.get(user_id, [])
-
-        if not buffer:
-            raise ValueError("Buffer is empty")
-
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         uuid_part = uuid.uuid4().hex[:8]
         archive_name = f"{prefix}_{timestamp}_{uuid_part}.tar.gz"
         archive_path = Path(os.path.join(self.download_dir, archive_name))
+        temporary_archive_path = archive_path.with_suffix(".tar.gz.part")
+        successful_ids: list[int] = []
+        failed_count = 0
 
         try:
-            # Create tar.gz archive
-            with tarfile.open(archive_path, "w:gz") as tar:
-                for file_info in buffer:
+            self.download_dir.mkdir(parents=True, exist_ok=True)
+            with tarfile.open(temporary_archive_path, "w:gz") as tar:
+                for buffered_file in buffer:
+                    file_info = buffered_file.file_info
+                    temp_path: Path | None = None
                     try:
                         tg_file = await bot.get_file(file_info.file_id)
-                        # Download to temp file
                         with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-                            await bot.download_file(tg_file.file_path, temp_file.name)
+                            temp_path = Path(temp_file.name)
+                        await bot.download_file(tg_file.file_path, temp_path)
 
-                            # Detect image format for photos
-                            filename = file_info.filename
-                            if file_info.file_type == "photo":
-                                ext = detect_image_format(Path(temp_file.name))
-                                filename = f"photo{ext}"
+                        filename = file_info.filename
+                        if file_info.file_type == "photo":
+                            filename = f"photo{detect_image_format(temp_path)}"
+                        else:
+                            filename = Path(filename).name or "file"
 
-                            # Add to archive
-                            tar.add(temp_file.name, arcname=filename)
-                            Path(temp_file.name).unlink()  # Clean up temp file
+                        await asyncio.to_thread(tar.add, temp_path, arcname=filename)
+                        successful_ids.append(buffered_file.id)
 
                     except Exception as e:
+                        failed_count += 1
                         logger.error(
                             "Failed to process file in buffer",
                             file_id=file_info.file_id,
                             error=str(e),
                         )
+                    finally:
+                        if temp_path is not None:
+                            temp_path.unlink(missing_ok=True)
 
-            # Clear buffer
-            self.file_buffer[user_id] = []
+            if not successful_ids:
+                raise RuntimeError("None of the queued files could be archived")
+
+            os.replace(temporary_archive_path, archive_path)
+            await self.database.delete_buffered_files(user_id, successful_ids)
 
             logger.info(
                 "Archive created from buffer",
                 user_id=user_id,
                 archive=archive_name,
-                count=len(buffer),
+                count=len(successful_ids),
             )
-            return archive_name
+            return archive_name, len(successful_ids), failed_count
 
         except Exception as e:
             logger.error(
@@ -170,6 +231,9 @@ class FileService:
                 error=str(e),
             )
             raise
+        finally:
+            temporary_archive_path.unlink(missing_ok=True)
+            self._archiving_users.discard(user_id)
 
     def extract_file_info(self, message: Message) -> FileInfo | None:
         """Extract file information from Telegram message.

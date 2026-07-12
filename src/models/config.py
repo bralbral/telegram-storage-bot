@@ -28,6 +28,9 @@ class Config(BaseSettings):
         gt=0,
         description="Maximum file size in bytes",
     )
+    max_buffer_files: int = Field(default=100, gt=0)
+    max_buffer_size: int = Field(default=10 * 1024 * 1024 * 1024, gt=0)
+    max_docker_operations: int = Field(default=1, gt=0)
 
     throttle_rate: float = Field(
         default=3.0, gt=0, description="Throttle rate in seconds"
@@ -72,10 +75,21 @@ class Config(BaseSettings):
             raise ValueError(f"log_level must be one of {valid_levels}, got '{v}'")
         return v.upper()
 
+    @field_validator("admin_ids")
+    @classmethod
+    def validate_admin_ids(cls, value: str) -> str:
+        """Reject a malformed admin list instead of silently disabling admins."""
+        try:
+            ids = [int(item.strip()) for item in value.split(",")]
+        except (AttributeError, ValueError) as e:
+            raise ValueError(
+                "admin_ids must be comma-separated positive integers"
+            ) from e
+        if not ids or any(admin_id <= 0 for admin_id in ids):
+            raise ValueError("admin_ids must contain at least one positive integer")
+        return value
+
     @property
     def admin_ids_list(self) -> list[int]:
         """Parse admin IDs from comma-separated string."""
-        try:
-            return [int(id_.strip()) for id_ in self.admin_ids.split(",")]
-        except (ValueError, AttributeError):
-            return []
+        return [int(id_.strip()) for id_ in self.admin_ids.split(",")]

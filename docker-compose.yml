@@ -39,13 +39,16 @@ services:
       - USE_LOCAL_API=${USE_LOCAL_API:-true}
       - LOCAL_API_URL=${LOCAL_API_URL:-http://telegram-bot-api:8081}
       - HEALTH_PORT=${HEALTH_PORT:-8080}
+      - DB_PATH=${DB_PATH:-/app/data/users.db}
+      - MAX_BUFFER_FILES=${MAX_BUFFER_FILES:-100}
+      - MAX_BUFFER_SIZE=${MAX_BUFFER_SIZE:-10737418240}
+      - MAX_DOCKER_OPERATIONS=${MAX_DOCKER_OPERATIONS:-1}
     ports:
       - "${HEALTH_PORT:-8080}:${HEALTH_PORT:-8080}"
     volumes:
       - ./telegram-local-api:/telegram-local-api:ro
       - ./downloads:/downloads
-      # copy from container after first run
-      # - ./users.db:/app/users.db
+      - ./data:/app/data
     depends_on:
       telegram-bot-api:
         condition: service_healthy

@@ -21,7 +21,9 @@ DEFAULT_CHUNK_SIZE = 1024 * 1024
 class DockerService:
     """Service for Docker image operations."""
 
-    def __init__(self, docker_host: str, download_dir: Path) -> None:
+    def __init__(
+        self, docker_host: str, download_dir: Path, max_concurrent_operations: int = 1
+    ) -> None:
         """Initialize Docker service.
 
         Args:
@@ -31,6 +33,8 @@ class DockerService:
         self.docker_host = docker_host
         self.download_dir = download_dir
         self._running_tasks: set[asyncio.Task] = set()
+        self._image_locks: dict[str, asyncio.Lock] = {}
+        self._operation_semaphore = asyncio.Semaphore(max_concurrent_operations)
 
     async def _run_tracked_task(self, sync_func, *args) -> Any:
         """Run a synchronous function in a tracked task.
@@ -89,42 +93,23 @@ class DockerService:
         try:
             self.download_dir.mkdir(parents=True, exist_ok=True)
 
-            # Generate filename with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_image_name = image_name.replace("/", "_").replace(":", "_")
-            tar_filename = f"{prefix}_{timestamp}_{safe_image_name}.tar"
-            tar_filepath = Path(os.path.join(self.download_dir, tar_filename))
-
-            # Save image as tar with repository tags to preserve image name
-            logger.info("Saving image to tar", tar_filename=tar_filename)
-            image = client.images.get(image_name)
-            with open(tar_filepath, "wb") as f:
-                for chunk in image.save(named=True):
-                    f.write(chunk)
-            logger.info("Image saved to tar", tar_filepath=str(tar_filepath))
-
-            # Verify tar file exists
-            if not tar_filepath.exists():
-                logger.error("Tar file was not created", tar_filepath=str(tar_filepath))
-                raise RuntimeError(f"Tar file was not created: {tar_filepath}")
-
-            # Compress to gz using streaming to avoid OOM
-            logger.info("Compressing tar file to gzip", tar_filename=tar_filename)
-            gz_filename = f"{tar_filename}.gz"
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            gz_filename = f"{prefix}_{timestamp}_{safe_image_name}.tar.gz"
             gz_filepath = Path(os.path.join(self.download_dir, gz_filename))
+            temporary_path = gz_filepath.with_suffix(".tar.gz.part")
 
-            with open(tar_filepath, "rb") as f_in:
-                with open(gz_filepath, "wb") as f_out:
+            # Stream the Docker tar straight into gzip: no full temporary tar on disk.
+            logger.info("Saving and compressing Docker image", filename=gz_filename)
+            image = client.images.get(image_name)
+            try:
+                with open(temporary_path, "wb") as f_out:
                     with gzip.GzipFile(fileobj=f_out, mode="wb") as gzip_file:
-                        while True:
-                            chunk = f_in.read(DEFAULT_CHUNK_SIZE)
-                            if not chunk:
-                                break
+                        for chunk in image.save(named=True):
                             gzip_file.write(chunk)
-
-            # Clean up original tar file
-            tar_filepath.unlink()
-            logger.info("Original tar file deleted", tar_filename=tar_filename)
+                os.replace(temporary_path, gz_filepath)
+            finally:
+                temporary_path.unlink(missing_ok=True)
 
             return gz_filename
         except Exception as e:
@@ -144,6 +129,8 @@ class DockerService:
             logger.info("Removing Docker image", image_name=image_name)
             client.images.remove(image_name, force=True)
             logger.info("Image removed successfully", image=image_name)
+        except docker.errors.ImageNotFound:
+            logger.debug("Docker image was not present", image=image_name)
         except Exception as e:
             logger.warning("Failed to remove image", image=image_name, error=str(e))
         finally:
@@ -167,16 +154,16 @@ class DockerService:
         prefix = image_info.prefix
 
         try:
-            # Pull image
-            await self._run_tracked_task(self._pull_image_sync, image_name)
-
-            # Save image
-            gz_filename = await self._run_tracked_task(
-                self._save_image_sync, image_name, prefix
-            )
-
-            # Cleanup image
-            await self._run_tracked_task(self._cleanup_image_sync, image_name)
+            image_lock = self._image_locks.setdefault(image_name, asyncio.Lock())
+            async with image_lock, self._operation_semaphore:
+                await self._run_tracked_task(self._cleanup_image_sync, image_name)
+                try:
+                    await self._run_tracked_task(self._pull_image_sync, image_name)
+                    gz_filename = await self._run_tracked_task(
+                        self._save_image_sync, image_name, prefix
+                    )
+                finally:
+                    await self._run_tracked_task(self._cleanup_image_sync, image_name)
 
             logger.info(
                 "Docker image saved successfully",
@@ -199,28 +186,6 @@ class DockerService:
             )
             raise
 
-    async def cleanup_before_pull(self, image_name: str) -> None:
-        """Clean up existing image before pull.
-
-        Args:
-            image_name: Docker image name to clean up
-        """
-        client = docker.DockerClient(base_url=self.docker_host)
-        try:
-            try:
-                client.images.remove(image_name, force=True)
-                logger.info("Cleaned up existing image before pull", image=image_name)
-            except docker.errors.ImageNotFound:
-                pass  # Image doesn't exist, that's fine
-            except Exception as e:
-                logger.warning(
-                    "Failed to clean up existing image",
-                    image=image_name,
-                    error=str(e),
-                )
-        finally:
-            client.close()
-
     async def cancel_all_operations(self) -> None:
         """Cancel all running Docker operations for graceful shutdown."""
         if not self._running_tasks:
@@ -241,10 +206,16 @@ class DockerService:
         Returns:
             True if Docker daemon is accessible, False otherwise
         """
-        try:
+
+        def ping_sync() -> bool:
             client = docker.DockerClient(base_url=self.docker_host)
-            client.ping()
-            client.close()
-            return True
+            try:
+                client.ping()
+                return True
+            finally:
+                client.close()
+
+        try:
+            return await asyncio.wait_for(asyncio.to_thread(ping_sync), timeout=2)
         except Exception:
             return False

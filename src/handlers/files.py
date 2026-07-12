@@ -37,7 +37,13 @@ async def handle_file(
         # Add to buffer
         user_id = message.from_user.id
         file_info_with_prefix = file_info.model_copy()
-        buffer_count = file_service.add_to_buffer(user_id, file_info_with_prefix)
+        try:
+            buffer_count = await file_service.add_to_buffer(
+                user_id, file_info_with_prefix
+            )
+        except (ValueError, RuntimeError) as e:
+            await message.reply(f"❌ {e}")
+            return
 
         await message.reply(
             f"📎 Added to buffer ({buffer_count} file(s)). Use /drop to save all or /buffer to view."

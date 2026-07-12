@@ -44,6 +44,11 @@ class PrefixValidationMiddleware(BaseMiddleware):
 
         # All users need prefix for files and docker pull
         if (has_file or is_docker_pull) and not data.get("has_prefix", False):
+            logger.info(
+                "Action denied because prefix is not set",
+                action="file_upload" if has_file else "docker_pull",
+                user_id=event.from_user.id,
+            )
             await event.answer("❌ Set your prefix first with /set_prefix")
             return
 

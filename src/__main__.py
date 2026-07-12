@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import signal
 from pathlib import Path
 
@@ -25,31 +24,8 @@ from src.services.docker_service import DockerService
 from src.services.file_service import FileService
 from src.services.user_service import UserService
 
-
-# Load environment variables from .env file if it exists (before logging setup)
-def load_env_file() -> None:
-    """Load environment variables from .env file if it exists."""
-    env_file = Path(
-        os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"
-        )
-    )
-    if env_file.exists():
-        try:
-            with open(env_file) as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        key, value = line.split("=", 1)
-                        os.environ.setdefault(key.strip(), value.strip())
-        except Exception as e:
-            print(f"Warning: Failed to load .env file: {e}")
-
-
-load_env_file()
-
 # Configure structlog
-configure_logging(log_level=os.getenv("LOG_LEVEL", "INFO"))
+configure_logging()
 logger = get_logger(__name__)
 
 
@@ -58,6 +34,7 @@ async def setup_bot() -> tuple[
 ]:
     """Create and configure bot and dispatcher."""
     config = Config()
+    configure_logging(log_level=config.log_level)
 
     # Create services directly
     database = Database(path=config.db_path)
@@ -69,10 +46,14 @@ async def setup_bot() -> tuple[
     file_service = FileService(
         compression_service=compression_service,
         download_dir=download_dir,
+        database=database,
+        max_buffer_files=config.max_buffer_files,
+        max_buffer_size=config.max_buffer_size,
     )
     docker_service = DockerService(
         docker_host=config.docker_host,
         download_dir=download_dir,
+        max_concurrent_operations=config.max_docker_operations,
     )
 
     bot_token = config.bot_token
@@ -100,9 +81,9 @@ async def setup_bot() -> tuple[
     await database.init()
     await user.set_commands(bot, admin_ids)
 
-    # Register middlewares in order: throttle -> access -> service injection -> prefix validation
-    dp.message.outer_middleware(ThrottleMiddleware(config.throttle_rate, database))
+    # Access runs first so throttling can use its registration result.
     dp.message.outer_middleware(AccessMiddleware(database, admin_ids))
+    dp.message.outer_middleware(ThrottleMiddleware(config.throttle_rate))
     dp.message.outer_middleware(
         ServiceInjectionMiddleware(
             bot,
