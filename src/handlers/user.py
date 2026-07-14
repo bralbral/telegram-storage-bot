@@ -11,6 +11,27 @@ from src.utils.size_utils import bytes_to_mb
 logger = get_logger(__name__)
 
 
+async def send_start_help(message: Message, prefix: str) -> None:
+    """Send the common usage instructions shown by /start."""
+    await message.answer(
+        f"👋 Hello! Your prefix: <code>{prefix or 'not set'}</code>\n\n"
+        "<b>Files</b>\n"
+        "• Send a file to add it to the queue.\n"
+        "• <code>/buffer</code> — view the queue\n"
+        "• <code>/drop</code> — create an archive\n"
+        "• <code>/clear</code> — empty the queue\n\n"
+        "<b>Text in one file</b>\n"
+        "1. <code>/text</code> — start collecting text\n"
+        "2. Send the text parts\n"
+        "3. <code>/endtext</code> — add the .txt file to the queue\n"
+        "<code>/canceltext</code> — cancel collection\n\n"
+        "<b>Docker image</b>\n"
+        "Send: <code>docker pull nginx:latest</code>\n\n"
+        "<code>/set_prefix &lt;name&gt;</code> — change the file prefix.",
+        parse_mode="HTML",
+    )
+
+
 async def cmd_start(message: Message, **kwargs) -> None:
     """Handle /start command - show greeting with current prefix and update commands."""
     user_data = kwargs.get("user_data", ("", False))
@@ -19,14 +40,7 @@ async def cmd_start(message: Message, **kwargs) -> None:
 
     prefix = user_data[0] or ""
     try:
-        await message.answer(
-            f"👋 Hello! Your prefix: <code>{prefix or 'not set'}</code>\n\n"
-            "Send files to save them as an archive\n"
-            "Or send <code>docker pull image_name:tag</code> to save a Docker image\n"
-            "Use /set_prefix to set your file prefix\n\n"
-            "Use /buffer to review queued files and /drop to create the archive.",
-            parse_mode="HTML",
-        )
+        await send_start_help(message, prefix)
         logger.info("User started bot", user_id=message.from_user.id)
 
         # Update commands for this user based on their role
@@ -49,7 +63,7 @@ async def cmd_my_prefix(message: Message, **kwargs) -> None:
             await message.answer(f"📝 Your prefix: `{prefix}`")
         else:
             await message.answer(
-                "❌ You don't have a prefix set. Use /set_prefix to set one."
+                "❌ You don't have a prefix set.\nUse /set_prefix to set one."
             )
         logger.info("User requested their prefix", user_id=message.from_user.id)
     except Exception as e:
@@ -101,7 +115,7 @@ async def cmd_buffer(message: Message, **kwargs) -> None:
     buffer = await file_service.get_buffer(user_id)
 
     if not buffer:
-        await message.answer("📭 Buffer is empty. Send files to add them.")
+        await message.answer("📭 Buffer is empty.\nSend files to add them.")
         return
 
     total_size = file_service.get_buffer_size(buffer)
@@ -142,6 +156,50 @@ async def cmd_clear(message: Message, **kwargs) -> None:
     logger.info("User cleared buffer", user_id=user_id, removed=count)
 
 
+async def cmd_text(message: Message, **kwargs) -> None:
+    """Start collecting messages into one text file."""
+    file_service = kwargs.get("file_service")
+    if not file_service:
+        raise RuntimeError("file_service not provided in kwargs")
+    try:
+        await file_service.start_text_collection(message.from_user.id)
+    except (ValueError, RuntimeError) as e:
+        await message.answer(f"❌ {e}")
+        return
+    await message.answer("📝 Text collection started.\nSend parts, then use /endtext.")
+
+
+async def cmd_endtext(message: Message, **kwargs) -> None:
+    """Finish a text collection and queue its single text file."""
+    file_service = kwargs.get("file_service")
+    if not file_service:
+        raise RuntimeError("file_service not provided in kwargs")
+    try:
+        file_info, buffer_count = await file_service.finish_text_collection(
+            message.from_user.id
+        )
+    except (ValueError, RuntimeError) as e:
+        await message.answer(f"❌ {e}")
+        return
+    await message.answer(
+        f"📝 Text saved as {file_info.filename} and added to buffer "
+        f"({buffer_count} file(s)).\n"
+        "Use /drop to save all, /buffer to view, or /clear to empty the queue."
+    )
+
+
+async def cmd_canceltext(message: Message, **kwargs) -> None:
+    """Discard an unfinished text collection."""
+    file_service = kwargs.get("file_service")
+    if not file_service:
+        raise RuntimeError("file_service not provided in kwargs")
+    count = await file_service.cancel_text_collection(message.from_user.id)
+    if count:
+        await message.answer(f"🗑️ Text collection cancelled ({count} part(s) removed).")
+    else:
+        await message.answer("📭 No active text collection.")
+
+
 async def cmd_drop(message: Message, **kwargs) -> None:
     """Handle /drop command - save all files from buffer as tar.gz archive."""
     user_data = kwargs.get("user_data", ("", False))
@@ -158,7 +216,9 @@ async def cmd_drop(message: Message, **kwargs) -> None:
         await message.answer("📭 Buffer is empty. Send files first.")
         return
     except RuntimeError:
-        await message.answer("⏳ Archive creation is already in progress. Please wait.")
+        await message.answer(
+            "⏳ Archive creation is already in progress.\nPlease wait."
+        )
         return
 
     prefix = user_data[0] or ""
@@ -195,7 +255,7 @@ async def cmd_drop(message: Message, **kwargs) -> None:
             logger.error(
                 "Failed to save buffer as archive", user_id=user_id, error=str(e)
             )
-            await message.reply("❌ Failed to save archive. Please try again.")
+            await message.reply("❌ Failed to save archive.\nPlease try again.")
 
     task = asyncio.create_task(process_archive())
     file_service._running_tasks.add(task)
@@ -222,6 +282,9 @@ async def set_commands(
         BotCommand(command="buffer", description="View file buffer"),
         BotCommand(command="clear", description="Clear file buffer"),
         BotCommand(command="drop", description="Save buffer as archive"),
+        BotCommand(command="text", description="Start collecting one text file"),
+        BotCommand(command="endtext", description="Finish and queue collected text"),
+        BotCommand(command="canceltext", description="Cancel collected text"),
     ]
 
     # Admin-only commands

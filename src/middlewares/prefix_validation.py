@@ -42,11 +42,21 @@ class PrefixValidationMiddleware(BaseMiddleware):
         if event.text and event.text.strip().lower().startswith("docker pull"):
             is_docker_pull = True
 
-        # All users need prefix for files and docker pull
-        if (has_file or is_docker_pull) and not data.get("has_prefix", False):
+        is_text_operation = bool(event.text and event.text.strip() == "/text")
+
+        # All users need a prefix for queued files, Docker images, and text mode.
+        if (has_file or is_docker_pull or is_text_operation) and not data.get(
+            "has_prefix", False
+        ):
             logger.info(
                 "Action denied because prefix is not set",
-                action="file_upload" if has_file else "docker_pull",
+                action=(
+                    "file_upload"
+                    if has_file
+                    else "docker_pull"
+                    if is_docker_pull
+                    else "text"
+                ),
                 user_id=event.from_user.id,
             )
             await event.answer("❌ Set your prefix first with /set_prefix")

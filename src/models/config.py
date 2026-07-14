@@ -30,6 +30,7 @@ class Config(BaseSettings):
     )
     max_buffer_files: int = Field(default=100, gt=0)
     max_buffer_size: int = Field(default=10 * 1024 * 1024 * 1024, gt=0)
+    max_text_collection_size: int = Field(default=10 * 1024 * 1024, gt=0)
     max_docker_operations: int = Field(default=1, gt=0)
 
     throttle_rate: float = Field(

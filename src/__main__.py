@@ -49,6 +49,7 @@ async def setup_bot() -> tuple[
         database=database,
         max_buffer_files=config.max_buffer_files,
         max_buffer_size=config.max_buffer_size,
+        max_text_collection_size=config.max_text_collection_size,
     )
     docker_service = DockerService(
         docker_host=config.docker_host,
@@ -74,6 +75,13 @@ async def setup_bot() -> tuple[
     else:
         bot = Bot(token=bot_token)
         logger.info("Using standard Telegram Bot API")
+
+    bot_info = await bot.get_me()
+    logger.info(
+        "Bot identity retrieved",
+        username=f"@{bot_info.username}" if bot_info.username else None,
+        bot_id=bot_info.id,
+    )
 
     dp = Dispatcher()
 
@@ -103,6 +111,9 @@ async def setup_bot() -> tuple[
     dp.message.register(user.cmd_buffer, Command("buffer"))
     dp.message.register(user.cmd_clear, Command("clear"))
     dp.message.register(user.cmd_drop, Command("drop"))
+    dp.message.register(user.cmd_text, Command("text"))
+    dp.message.register(user.cmd_endtext, Command("endtext"))
+    dp.message.register(user.cmd_canceltext, Command("canceltext"))
 
     # Register admin commands
     cmd_add_user, cmd_remove_user, cmd_list_users, cmd_status = create_admin_handlers(

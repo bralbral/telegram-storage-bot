@@ -66,7 +66,9 @@ project's configuration.
 
 ## File workflow
 
-1. Send files to the bot; they are added to your personal queue.
+1. Send files to the bot; they are added to your personal queue. To combine
+   multiple text messages into one file, run `/text`, send all parts, and finish
+   with `/endtext` (or discard the unfinished collection with `/canceltext`).
 2. Review the queue with `/buffer`.
 3. Run `/drop`; the bot downloads the queued files and creates one `tar.gz`
    archive in `DOWNLOAD_DIR`.
@@ -81,7 +83,10 @@ sent files are rejected until archiving finishes. This prevents duplicate file
 exports and race conditions.
 
 By default, each user may queue up to 100 files with a total size of 10 GB.
-Configure these limits with `MAX_BUFFER_FILES` and `MAX_BUFFER_SIZE`.
+Configure queue limits with `MAX_BUFFER_FILES` and `MAX_BUFFER_SIZE`. An
+Text files, including completed ones waiting for `/drop`, are kept only in
+memory and are lost after a bot restart; `MAX_TEXT_COLLECTION_SIZE` limits one
+collection to 10 MiB by default.
 
 ## Docker image workflow
 
@@ -107,6 +112,9 @@ jobs (default: `1`).
 - `/buffer` — show queued files and their total size.
 - `/drop` — create an archive from the queue.
 - `/clear` — clear the queue when archiving is not in progress.
+- `/text` — start collecting messages into one text file.
+- `/endtext` — finish the collected text and add it to the queue.
+- `/canceltext` — discard an unfinished collected text.
 
 ### Administrators
 
@@ -126,6 +134,7 @@ jobs (default: `1`).
 | `MAX_FILE_SIZE` | `2147483648` | Maximum size of a single incoming file, in bytes. |
 | `MAX_BUFFER_FILES` | `100` | Maximum queued files per user. |
 | `MAX_BUFFER_SIZE` | `10737418240` | Maximum combined queue size per user, in bytes. |
+| `MAX_TEXT_COLLECTION_SIZE` | `10485760` | Maximum in-memory size of one `/text` collection, in bytes. |
 | `MAX_DOCKER_OPERATIONS` | `1` | Maximum concurrent Docker pull/export jobs. |
 | `THROTTLE_RATE` | `3.0` | Throttling interval for unregistered users, in seconds. |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`. |

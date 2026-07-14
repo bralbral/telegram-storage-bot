@@ -10,3 +10,4 @@ class FileInfo(BaseModel):
     filename: str = Field(..., description="Original filename")
     file_size: int | None = Field(None, description="File size in bytes")
     file_type: str = Field(..., description="File type (document, photo, video, etc.)")
+    content: str | None = Field(None, description="Transient in-memory text content")
