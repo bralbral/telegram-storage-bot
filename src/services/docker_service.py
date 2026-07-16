@@ -97,7 +97,7 @@ class DockerService:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             gz_filename = f"{prefix}_{timestamp}_{safe_image_name}.tar.gz"
             gz_filepath = Path(os.path.join(self.download_dir, gz_filename))
-            temporary_path = gz_filepath.with_suffix(".tar.gz.part")
+            temporary_path = gz_filepath.with_suffix(gz_filepath.suffix + ".part")
 
             # Stream the Docker tar straight into gzip: no full temporary tar on disk.
             logger.info("Saving and compressing Docker image", filename=gz_filename)

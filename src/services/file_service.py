@@ -279,7 +279,7 @@ class FileService:
         uuid_part = uuid.uuid4().hex[:8]
         archive_name = f"{prefix}_{timestamp}_{uuid_part}.tar.gz"
         archive_path = Path(os.path.join(self.download_dir, archive_name))
-        temporary_archive_path = archive_path.with_suffix(".tar.gz.part")
+        temporary_archive_path = archive_path.with_suffix(archive_path.suffix + ".part")
         successful_ids: list[int] = []
         successful_text_file_ids: list[str] = []
         successful_count = 0
