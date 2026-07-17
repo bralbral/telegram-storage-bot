@@ -59,9 +59,9 @@ project's configuration.
 
 - Administrators listed in `ADMIN_IDS` are granted access automatically.
 - An administrator must add a regular user with `/add_user`.
-- Users must set a prefix with `/set_prefix` before sending files or requesting
-  Docker images.
-- New, unregistered users can only use `/start` and are throttled by
+- Users must set a prefix with `/set_prefix` before sending files, requesting
+  Docker images, or downloading Python packages.
+- New, unregistered users can only use `/start` and `/help` and are throttled by
   `THROTTLE_RATE`.
 
 ## File workflow
@@ -83,7 +83,7 @@ sent files are rejected until archiving finishes. This prevents duplicate file
 exports and race conditions.
 
 By default, each user may queue up to 100 files with a total size of 10 GB.
-Configure queue limits with `MAX_BUFFER_FILES` and `MAX_BUFFER_SIZE`. An
+Configure queue limits with `MAX_BUFFER_FILES` and `MAX_BUFFER_SIZE`.
 Text files, including completed ones waiting for `/drop`, are kept only in
 memory and are lost after a bot restart; `MAX_TEXT_COLLECTION_SIZE` limits one
 collection to 10 MiB by default.
@@ -102,11 +102,57 @@ DIND. No full temporary `.tar` file is created. Operations for the same image
 do not overlap; `MAX_DOCKER_OPERATIONS` controls total concurrent pull/export
 jobs (default: `1`).
 
+## Python package workflow
+
+Supported target Python versions are 3.7 through 3.14. Send a message with the
+required target Python version. By default, the requested package and all of
+its dependencies are downloaded:
+
+```text
+pip download --python 3.12 requests==2.32.3
+```
+
+To download only the requested package, add `--no-deps`. Python 3.11 is
+selected explicitly in the same way:
+
+```text
+pip download --python 3.11 --no-deps requests==2.32.3
+```
+
+To fail instead of downloading source archives when a wheel is unavailable,
+add `--only-binary`:
+
+```text
+pip download --python 3.12 --only-binary requests==2.32.3
+```
+
+The bot starts a temporary `python:3.12-slim` container, downloads the package
+and all of its dependencies for Linux, and saves them in a `.tar.gz` archive.
+The archive can contain ready-made `manylinux` wheels and source archives when
+a wheel is unavailable. Add `--no-deps` to download only the requested package.
+Add `--only-binary` to accept ready-made wheels only.
+The temporary container and Python image are removed after every job;
+`MAX_PIP_OPERATIONS` controls total concurrent jobs (default: `1`).
+
+Supported command syntax:
+
+```text
+pip download --python <3.7-3.14> [--no-deps] [--only-binary] <package> [package...]
+```
+
+`--python` is required. Package versions use normal pip syntax, for example
+`requests==2.32.3`. The two optional flags can be combined.
+Archive names include the target Python version and the first requested package;
+an explicitly pinned version is included as well.
+Python 3.7 is supported, but it is end-of-life, so current package releases may
+not provide compatible distributions.
+
 ## Commands
 
 ### All users
 
 - `/start` — show a greeting and short instructions.
+- `/help` — show the same usage instructions.
 - `/my_prefix` — show the current prefix.
 - `/set_prefix <prefix>` — set a prefix of 1–10 Latin letters, digits, or `_`.
 - `/buffer` — show queued files and their total size.
@@ -136,6 +182,7 @@ jobs (default: `1`).
 | `MAX_BUFFER_SIZE` | `10737418240` | Maximum combined queue size per user, in bytes. |
 | `MAX_TEXT_COLLECTION_SIZE` | `10485760` | Maximum in-memory size of one `/text` collection, in bytes. |
 | `MAX_DOCKER_OPERATIONS` | `1` | Maximum concurrent Docker pull/export jobs. |
+| `MAX_PIP_OPERATIONS` | `1` | Maximum concurrent Python package download jobs. |
 | `THROTTLE_RATE` | `3.0` | Throttling interval for unregistered users, in seconds. |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`. |
 | `HEALTH_PORT` | `8080` | Health endpoint port. |

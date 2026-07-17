@@ -9,6 +9,7 @@ from aiogram.types import Message
 from src.logging_config import get_logger
 from src.services.docker_service import DockerService
 from src.services.file_service import FileService
+from src.services.pip_service import PipService
 from src.services.user_service import UserService
 
 if TYPE_CHECKING:
@@ -26,6 +27,7 @@ class ServiceInjectionMiddleware(BaseMiddleware):
         "download_dir",
         "file_service",
         "docker_service",
+        "pip_service",
         "user_service",
     )
 
@@ -36,6 +38,7 @@ class ServiceInjectionMiddleware(BaseMiddleware):
         download_dir: Path | None = None,
         file_service: FileService | None = None,
         docker_service: DockerService | None = None,
+        pip_service: PipService | None = None,
         user_service: UserService | None = None,
     ):
         self.bot = bot
@@ -43,6 +46,7 @@ class ServiceInjectionMiddleware(BaseMiddleware):
         self.download_dir = download_dir
         self.file_service = file_service
         self.docker_service = docker_service
+        self.pip_service = pip_service
         self.user_service = user_service
 
     async def __call__(
@@ -57,6 +61,8 @@ class ServiceInjectionMiddleware(BaseMiddleware):
             data["file_service"] = self.file_service
         if self.docker_service:
             data["docker_service"] = self.docker_service
+        if self.pip_service:
+            data["pip_service"] = self.pip_service
         if self.user_service:
             data["user_service"] = self.user_service
 

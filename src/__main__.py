@@ -10,7 +10,7 @@ from aiogram.client.session.base import TelegramAPIServer
 from aiogram.filters import Command
 
 from src.db.database import Database
-from src.handlers import docker, files, user
+from src.handlers import docker, files, pip, user
 from src.handlers.admin import create_admin_handlers
 from src.health import HealthServer
 from src.logging_config import configure_logging, get_logger
@@ -22,6 +22,7 @@ from src.models.config import Config
 from src.services.compression_service import CompressionService
 from src.services.docker_service import DockerService
 from src.services.file_service import FileService
+from src.services.pip_service import PipService
 from src.services.user_service import UserService
 
 # Configure structlog
@@ -30,7 +31,7 @@ logger = get_logger(__name__)
 
 
 async def setup_bot() -> tuple[
-    Bot, Dispatcher, HealthServer, Database, DockerService, FileService
+    Bot, Dispatcher, HealthServer, Database, DockerService, FileService, PipService
 ]:
     """Create and configure bot and dispatcher."""
     config = Config()
@@ -55,6 +56,11 @@ async def setup_bot() -> tuple[
         docker_host=config.docker_host,
         download_dir=download_dir,
         max_concurrent_operations=config.max_docker_operations,
+    )
+    pip_service = PipService(
+        docker_host=config.docker_host,
+        download_dir=download_dir,
+        max_concurrent_operations=config.max_pip_operations,
     )
 
     bot_token = config.bot_token
@@ -99,6 +105,7 @@ async def setup_bot() -> tuple[
             download_dir,
             file_service,
             docker_service,
+            pip_service,
             user_service,
         )
     )
@@ -106,6 +113,7 @@ async def setup_bot() -> tuple[
 
     # Register user commands (services injected via middleware)
     dp.message.register(user.cmd_start, Command("start"))
+    dp.message.register(user.cmd_start, Command("help"))
     dp.message.register(user.cmd_my_prefix, Command("my_prefix"))
     dp.message.register(user.cmd_set_prefix, Command("set_prefix"))
     dp.message.register(user.cmd_buffer, Command("buffer"))
@@ -127,17 +135,19 @@ async def setup_bot() -> tuple[
     # Register file and docker handlers
     files.register_file_handlers(dp, file_service, config.max_file_size)
     docker.register_text_handlers(dp, docker_service)
+    pip.register_pip_handlers(dp, pip_service)
 
     # Health check server
     health_server = HealthServer(port=config.health_port)
 
     logger.info(f"Bot configured with {len(admin_ids)} admin(s)")
-    return bot, dp, health_server, database, docker_service, file_service
+    return bot, dp, health_server, database, docker_service, file_service, pip_service
 
 
 async def run_bot() -> None:
     """Run the bot with graceful shutdown."""
-    bot, dp, health_server, database, docker_service, file_service = (
+    bot, dp, health_server, database, docker_service, file_service, pip_service = (
+        None,
         None,
         None,
         None,
@@ -164,6 +174,7 @@ async def run_bot() -> None:
             database,
             docker_service,
             file_service,
+            pip_service,
         ) = await setup_bot()
 
         # Start health check server
@@ -203,6 +214,9 @@ async def run_bot() -> None:
             # Cancel Docker operations
             if docker_service:
                 await docker_service.cancel_all_operations()
+
+            if pip_service:
+                await pip_service.cancel_all_operations()
 
             # Cancel archive operations
             if file_service:

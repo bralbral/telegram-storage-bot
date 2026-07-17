@@ -104,8 +104,11 @@ def register_file_handlers(
     dp.message.register(
         text_file_handler,
         F.text.func(
-            lambda text: text is not None
-            and not text.lstrip().startswith("/")
-            and not text.strip().lower().startswith("docker pull ")
+            lambda text: (
+                text is not None
+                and not text.lstrip().startswith("/")
+                and not text.strip().lower().startswith("docker pull ")
+                and not text.strip().lower().startswith("pip download ")
+            )
         ),
     )
