@@ -94,4 +94,11 @@ def register_text_handlers(dp: Any, docker_service: DockerService) -> None:
             raise RuntimeError("docker_service not provided in kwargs")
         await handle_text(message, user_data, docker_service)
 
-    dp.message.register(text_handler, F.text)
+    dp.message.register(
+        text_handler,
+        F.text.func(
+            lambda text: (
+                text is not None and text.strip().lower().startswith("docker pull ")
+            )
+        ),
+    )

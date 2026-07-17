@@ -32,6 +32,7 @@ class Config(BaseSettings):
     max_buffer_size: int = Field(default=10 * 1024 * 1024 * 1024, gt=0)
     max_text_collection_size: int = Field(default=10 * 1024 * 1024, gt=0)
     max_docker_operations: int = Field(default=1, gt=0)
+    max_pip_operations: int = Field(default=1, gt=0)
 
     throttle_rate: float = Field(
         default=3.0, gt=0, description="Throttle rate in seconds"

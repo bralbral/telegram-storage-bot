@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 
 
 async def send_start_help(message: Message, prefix: str) -> None:
-    """Send the common usage instructions shown by /start."""
+    """Send the common usage instructions shown by /start and /help."""
     await message.answer(
         f"👋 Hello! Your prefix: <code>{prefix or 'not set'}</code>\n\n"
         "<b>Files</b>\n"
@@ -27,13 +27,20 @@ async def send_start_help(message: Message, prefix: str) -> None:
         "<code>/canceltext</code> — cancel collection\n\n"
         "<b>Docker image</b>\n"
         "Send: <code>docker pull nginx:latest</code>\n\n"
-        "<code>/set_prefix &lt;name&gt;</code> — change the file prefix.",
+        "<b>Python packages</b>\n"
+        "Supported Python versions: 3.7–3.14\n"
+        "With dependencies: <code>pip download --python 3.12 requests</code>\n"
+        "Pinned package: <code>pip download --python 3.12 requests==2.32.3</code>\n"
+        "Wheels only: <code>pip download --python 3.12 --only-binary requests</code>\n"
+        "Package only: <code>pip download --python 3.11 --no-deps requests</code>\n\n"
+        "<code>/set_prefix &lt;name&gt;</code> — change the file prefix.\n"
+        "<code>/help</code> — show this help message again.",
         parse_mode="HTML",
     )
 
 
 async def cmd_start(message: Message, **kwargs) -> None:
-    """Handle /start command - show greeting with current prefix and update commands."""
+    """Show the greeting and help message for /start and /help."""
     user_data = kwargs.get("user_data", ("", False))
     bot = kwargs.get("bot")
     admin_ids = kwargs.get("admin_ids", [])
@@ -41,7 +48,7 @@ async def cmd_start(message: Message, **kwargs) -> None:
     prefix = user_data[0] or ""
     try:
         await send_start_help(message, prefix)
-        logger.info("User started bot", user_id=message.from_user.id)
+        logger.info("User requested help", user_id=message.from_user.id)
 
         # Update commands for this user based on their role
         await set_commands(bot, admin_ids=admin_ids, user_id=message.from_user.id)
@@ -277,6 +284,7 @@ async def set_commands(
     # Basic commands for all users
     basic_commands = [
         BotCommand(command="start", description="Start the bot"),
+        BotCommand(command="help", description="Show usage instructions"),
         BotCommand(command="my_prefix", description="Show your prefix"),
         BotCommand(command="set_prefix", description="Set file prefix (1-10 chars)"),
         BotCommand(command="buffer", description="View file buffer"),

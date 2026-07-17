@@ -42,12 +42,16 @@ class PrefixValidationMiddleware(BaseMiddleware):
         if event.text and event.text.strip().lower().startswith("docker pull"):
             is_docker_pull = True
 
+        is_pip_download = bool(
+            event.text and event.text.strip().lower().startswith("pip download ")
+        )
+
         is_text_operation = bool(event.text and event.text.strip() == "/text")
 
         # All users need a prefix for queued files, Docker images, and text mode.
-        if (has_file or is_docker_pull or is_text_operation) and not data.get(
-            "has_prefix", False
-        ):
+        if (
+            has_file or is_docker_pull or is_pip_download or is_text_operation
+        ) and not data.get("has_prefix", False):
             logger.info(
                 "Action denied because prefix is not set",
                 action=(
@@ -55,6 +59,8 @@ class PrefixValidationMiddleware(BaseMiddleware):
                     if has_file
                     else "docker_pull"
                     if is_docker_pull
+                    else "pip_download"
+                    if is_pip_download
                     else "text"
                 ),
                 user_id=event.from_user.id,

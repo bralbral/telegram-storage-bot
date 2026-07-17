@@ -47,6 +47,8 @@ class AccessMiddleware(BaseMiddleware):
             return "file_upload"
         if text.lower().startswith("docker pull "):
             return "docker_pull"
+        if text.lower().startswith("pip download "):
+            return "pip_download"
         return "text_message"
 
     async def __call__(
@@ -74,12 +76,12 @@ class AccessMiddleware(BaseMiddleware):
                     prefix = ""
                     is_registered = True
 
-                # Regular users must be in DB, except for /start command
+                # Regular users must be in DB, except for public help commands.
                 if not is_admin and prefix is None:
-                    # Allow /start command for all users
-                    if event.text and event.text.strip() == "/start":
+                    # Allow /start and /help for all users.
+                    if event.text and event.text.strip() in {"/start", "/help"}:
                         prefix = ""  # Allow start command
-                        logger.debug("Allowing /start for new user")
+                        logger.debug("Allowing public help command for new user")
                     else:
                         logger.info("Access denied", action=self._get_action(event))
                         return
