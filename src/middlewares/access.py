@@ -49,6 +49,8 @@ class AccessMiddleware(BaseMiddleware):
             return "docker_pull"
         if text.lower().startswith("pip download "):
             return "pip_download"
+        if text.lower().startswith("apt download "):
+            return "apt_download"
         return "text_message"
 
     async def __call__(

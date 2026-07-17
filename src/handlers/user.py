@@ -33,6 +33,10 @@ async def send_start_help(message: Message, prefix: str) -> None:
         "Pinned package: <code>pip download --python 3.12 requests==2.32.3</code>\n"
         "Wheels only: <code>pip download --python 3.12 --only-binary requests</code>\n"
         "Package only: <code>pip download --python 3.11 --no-deps requests</code>\n\n"
+        "<b>Debian packages</b>\n"
+        "Dependencies: <code>apt download --debian 12 curl</code>\n"
+        "Historic target: <code>apt download --debian 10.2.0 curl</code>\n"
+        "Package only: <code>apt download --debian 13 --no-deps curl</code>\n\n"
         "<code>/set_prefix &lt;name&gt;</code> — change the file prefix.\n"
         "<code>/help</code> — show this help message again.",
         parse_mode="HTML",

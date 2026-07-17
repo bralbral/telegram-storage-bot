@@ -109,6 +109,7 @@ def register_file_handlers(
                 and not text.lstrip().startswith("/")
                 and not text.strip().lower().startswith("docker pull ")
                 and not text.strip().lower().startswith("pip download ")
+                and not text.strip().lower().startswith("apt download ")
             )
         ),
     )

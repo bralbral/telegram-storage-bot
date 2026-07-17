@@ -10,7 +10,7 @@ from aiogram.client.session.base import TelegramAPIServer
 from aiogram.filters import Command
 
 from src.db.database import Database
-from src.handlers import docker, files, pip, user
+from src.handlers import apt, docker, files, pip, user
 from src.handlers.admin import create_admin_handlers
 from src.health import HealthServer
 from src.logging_config import configure_logging, get_logger
@@ -19,6 +19,7 @@ from src.middlewares.prefix_validation import PrefixValidationMiddleware
 from src.middlewares.service_injection import ServiceInjectionMiddleware
 from src.middlewares.throttle import ThrottleMiddleware
 from src.models.config import Config
+from src.services.apt_service import AptService
 from src.services.compression_service import CompressionService
 from src.services.docker_service import DockerService
 from src.services.file_service import FileService
@@ -31,7 +32,14 @@ logger = get_logger(__name__)
 
 
 async def setup_bot() -> tuple[
-    Bot, Dispatcher, HealthServer, Database, DockerService, FileService, PipService
+    Bot,
+    Dispatcher,
+    HealthServer,
+    Database,
+    DockerService,
+    FileService,
+    PipService,
+    AptService,
 ]:
     """Create and configure bot and dispatcher."""
     config = Config()
@@ -56,6 +64,12 @@ async def setup_bot() -> tuple[
         docker_host=config.docker_host,
         download_dir=download_dir,
         max_concurrent_operations=config.max_docker_operations,
+    )
+    apt_service = AptService(
+        docker_host=config.docker_host,
+        download_dir=download_dir,
+        max_concurrent_operations=config.max_apt_operations,
+        download_timeout=config.apt_download_timeout,
     )
     pip_service = PipService(
         docker_host=config.docker_host,
@@ -104,6 +118,7 @@ async def setup_bot() -> tuple[
             admin_ids,
             download_dir,
             file_service,
+            apt_service,
             docker_service,
             pip_service,
             user_service,
@@ -136,17 +151,37 @@ async def setup_bot() -> tuple[
     files.register_file_handlers(dp, file_service, config.max_file_size)
     docker.register_text_handlers(dp, docker_service)
     pip.register_pip_handlers(dp, pip_service)
+    apt.register_apt_handlers(dp, apt_service)
 
     # Health check server
     health_server = HealthServer(port=config.health_port)
 
     logger.info(f"Bot configured with {len(admin_ids)} admin(s)")
-    return bot, dp, health_server, database, docker_service, file_service, pip_service
+    return (
+        bot,
+        dp,
+        health_server,
+        database,
+        docker_service,
+        file_service,
+        pip_service,
+        apt_service,
+    )
 
 
 async def run_bot() -> None:
     """Run the bot with graceful shutdown."""
-    bot, dp, health_server, database, docker_service, file_service, pip_service = (
+    (
+        bot,
+        dp,
+        health_server,
+        database,
+        docker_service,
+        file_service,
+        pip_service,
+        apt_service,
+    ) = (
+        None,
         None,
         None,
         None,
@@ -175,6 +210,7 @@ async def run_bot() -> None:
             docker_service,
             file_service,
             pip_service,
+            apt_service,
         ) = await setup_bot()
 
         # Start health check server
@@ -217,6 +253,9 @@ async def run_bot() -> None:
 
             if pip_service:
                 await pip_service.cancel_all_operations()
+
+            if apt_service:
+                await apt_service.cancel_all_operations()
 
             # Cancel archive operations
             if file_service:

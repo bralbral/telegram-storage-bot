@@ -7,6 +7,7 @@ from aiogram.dispatcher.middlewares.base import BaseMiddleware
 from aiogram.types import Message
 
 from src.logging_config import get_logger
+from src.services.apt_service import AptService
 from src.services.docker_service import DockerService
 from src.services.file_service import FileService
 from src.services.pip_service import PipService
@@ -26,6 +27,7 @@ class ServiceInjectionMiddleware(BaseMiddleware):
         "admin_ids",
         "download_dir",
         "file_service",
+        "apt_service",
         "docker_service",
         "pip_service",
         "user_service",
@@ -37,6 +39,7 @@ class ServiceInjectionMiddleware(BaseMiddleware):
         admin_ids: list[int] | None = None,
         download_dir: Path | None = None,
         file_service: FileService | None = None,
+        apt_service: AptService | None = None,
         docker_service: DockerService | None = None,
         pip_service: PipService | None = None,
         user_service: UserService | None = None,
@@ -45,6 +48,7 @@ class ServiceInjectionMiddleware(BaseMiddleware):
         self.admin_ids = admin_ids or []
         self.download_dir = download_dir
         self.file_service = file_service
+        self.apt_service = apt_service
         self.docker_service = docker_service
         self.pip_service = pip_service
         self.user_service = user_service
@@ -59,6 +63,8 @@ class ServiceInjectionMiddleware(BaseMiddleware):
         # Inject services
         if self.file_service:
             data["file_service"] = self.file_service
+        if self.apt_service:
+            data["apt_service"] = self.apt_service
         if self.docker_service:
             data["docker_service"] = self.docker_service
         if self.pip_service:
