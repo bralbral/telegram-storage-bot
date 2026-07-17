@@ -147,6 +147,44 @@ an explicitly pinned version is included as well.
 Python 3.7 is supported, but it is end-of-life, so current package releases may
 not provide compatible distributions.
 
+## Debian package workflow
+
+The bot downloads Debian packages in a temporary container and immediately
+saves the resulting `.deb` files as a `.tar.gz` archive. Dependencies are
+included by default:
+
+```text
+apt download --debian 12 curl
+```
+
+Use `--no-deps` to download only the requested package:
+
+```text
+apt download --debian 13 --no-deps curl
+```
+
+`--debian` is optional and defaults to Debian 12. Supported major releases are
+10 through 13. Known historical point releases automatically select their
+matching Debian Snapshot. For example:
+
+```text
+apt download --debian 10.2.0 curl
+```
+
+`--snapshot YYYYMMDDTHHMMSSZ` is available as an advanced override when a
+specific point-in-time archive state is required.
+
+The service uses one isolated Debian downloader container with empty APT state;
+the requested suite and snapshot determine the downloaded packages, not the
+container's own installed packages. Temporary
+containers, working directories, and images are removed after each job.
+`APT_DOWNLOAD_TIMEOUT` sets the maximum duration of one job and defaults to
+24 hours.
+
+```text
+apt download [--debian 10|11|12|13|10.x.y] [--snapshot YYYYMMDDTHHMMSSZ] [--no-deps] <package> [package...]
+```
+
 ## Commands
 
 ### All users
@@ -183,6 +221,8 @@ not provide compatible distributions.
 | `MAX_TEXT_COLLECTION_SIZE` | `10485760` | Maximum in-memory size of one `/text` collection, in bytes. |
 | `MAX_DOCKER_OPERATIONS` | `1` | Maximum concurrent Docker pull/export jobs. |
 | `MAX_PIP_OPERATIONS` | `1` | Maximum concurrent Python package download jobs. |
+| `MAX_APT_OPERATIONS` | `1` | Maximum concurrent Debian package download jobs. |
+| `APT_DOWNLOAD_TIMEOUT` | `86400` | Maximum duration of one Debian package download, in seconds. |
 | `THROTTLE_RATE` | `3.0` | Throttling interval for unregistered users, in seconds. |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`. |
 | `HEALTH_PORT` | `8080` | Health endpoint port. |
