@@ -10,7 +10,7 @@ from aiogram.client.session.base import TelegramAPIServer
 from aiogram.filters import Command
 
 from src.db.database import Database
-from src.handlers import apt, docker, files, pip, user
+from src.handlers import apt, docker, files, links, pip, user
 from src.handlers.admin import create_admin_handlers
 from src.health import HealthServer
 from src.logging_config import configure_logging, get_logger
@@ -25,6 +25,7 @@ from src.services.docker_service import DockerService
 from src.services.file_service import FileService
 from src.services.pip_service import PipService
 from src.services.user_service import UserService
+from src.services.web_snapshot_service import WebSnapshotService
 
 # Configure structlog
 configure_logging()
@@ -40,6 +41,7 @@ async def setup_bot() -> tuple[
     FileService,
     PipService,
     AptService,
+    WebSnapshotService,
 ]:
     """Create and configure bot and dispatcher."""
     config = Config()
@@ -50,6 +52,7 @@ async def setup_bot() -> tuple[
     compression_service = CompressionService()
     download_dir = Path(config.download_dir)
     download_dir.mkdir(parents=True, exist_ok=True)
+    config.snapshot_dir.mkdir(parents=True, exist_ok=True)
 
     user_service = UserService(database)
     file_service = FileService(
@@ -59,6 +62,12 @@ async def setup_bot() -> tuple[
         max_buffer_files=config.max_buffer_files,
         max_buffer_size=config.max_buffer_size,
         max_text_collection_size=config.max_text_collection_size,
+        snapshot_dir=config.snapshot_dir,
+    )
+    web_snapshot_service = WebSnapshotService(
+        playwright_url=config.playwright_url,
+        snapshot_dir=config.snapshot_dir,
+        timeout=config.playwright_timeout,
     )
     docker_service = DockerService(
         docker_host=config.docker_host,
@@ -122,6 +131,7 @@ async def setup_bot() -> tuple[
             docker_service,
             pip_service,
             user_service,
+            web_snapshot_service,
         )
     )
     dp.message.outer_middleware(PrefixValidationMiddleware())
@@ -149,6 +159,7 @@ async def setup_bot() -> tuple[
 
     # Register file and docker handlers
     files.register_file_handlers(dp, file_service, config.max_file_size)
+    links.register_link_handlers(dp)
     docker.register_text_handlers(dp, docker_service)
     pip.register_pip_handlers(dp, pip_service)
     apt.register_apt_handlers(dp, apt_service)
@@ -166,6 +177,7 @@ async def setup_bot() -> tuple[
         file_service,
         pip_service,
         apt_service,
+        web_snapshot_service,
     )
 
 
@@ -180,7 +192,9 @@ async def run_bot() -> None:
         file_service,
         pip_service,
         apt_service,
+        web_snapshot_service,
     ) = (
+        None,
         None,
         None,
         None,
@@ -211,6 +225,7 @@ async def run_bot() -> None:
             file_service,
             pip_service,
             apt_service,
+            web_snapshot_service,
         ) = await setup_bot()
 
         # Start health check server

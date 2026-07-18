@@ -50,6 +50,10 @@ class PrefixValidationMiddleware(BaseMiddleware):
         )
 
         is_text_operation = bool(event.text and event.text.strip() == "/text")
+        is_web_link = bool(
+            event.text
+            and event.text.strip().lower().startswith(("http://", "https://"))
+        )
 
         # All users need a prefix for queued files, Docker images, and text mode.
         if (
@@ -58,6 +62,7 @@ class PrefixValidationMiddleware(BaseMiddleware):
             or is_pip_download
             or is_apt_download
             or is_text_operation
+            or is_web_link
         ) and not data.get("has_prefix", False):
             logger.info(
                 "Action denied because prefix is not set",
@@ -71,6 +76,8 @@ class PrefixValidationMiddleware(BaseMiddleware):
                     else "apt_download"
                     if is_apt_download
                     else "text"
+                    if is_text_operation
+                    else "web_link"
                 ),
                 user_id=event.from_user.id,
             )

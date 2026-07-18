@@ -24,6 +24,19 @@ After startup:
 To use the local Telegram Bot API, obtain `TELEGRAM_API_ID` and
 `TELEGRAM_API_HASH` from <https://my.telegram.org>.
 
+### Published Docker images
+
+GitHub Actions publishes the production images to Docker Hub after a push to
+`main` or `master` (or after a manual workflow run):
+
+- [Bot image: `bral1488/storage-bot`](https://hub.docker.com/r/bral1488/storage-bot)
+- [Web snapshot sidecar: `bral1488/storage-bot-playwright`](https://hub.docker.com/r/bral1488/storage-bot-playwright)
+
+Each image has a `latest` tag and a timestamp tag. The workflow uses the
+`DOCKER_USERNAME` and `DOCKER_PASSWORD` GitHub repository secrets. Docker Hub
+creates the sidecar repository on its first successful push if it does not
+already exist.
+
 ### Local run
 
 ```bash
@@ -36,7 +49,9 @@ python -m src
 
 When running without containers, set `USE_LOCAL_API=false` in `.env` unless a
 local Telegram Bot API is already running. The Docker daemon must be reachable
-through `DOCKER_HOST`.
+through `DOCKER_HOST`. Saving URLs additionally requires a running Playwright
+sidecar and `PLAYWRIGHT_URL` pointing to it; Docker Compose configures both
+automatically.
 
 ### Docker CLI
 
@@ -53,7 +68,9 @@ docker run -d --name storage-bot --privileged \
 ```
 
 `--privileged` is required for DIND and is intentionally retained in this
-project's configuration.
+project's configuration. This standalone command does not start the Playwright
+sidecar, so start one separately and set `PLAYWRIGHT_URL` when URL snapshots
+are required.
 
 ## Access control
 
@@ -69,6 +86,9 @@ project's configuration.
 1. Send files to the bot; they are added to your personal queue. To combine
    multiple text messages into one file, run `/text`, send all parts, and finish
    with `/endtext` (or discard the unfinished collection with `/canceltext`).
+   Sending one `http://` or `https://` URL saves the rendered page as a
+   self-contained HTML file through the isolated Chromium/Playwright sidecar,
+   then queues it.
 2. Review the queue with `/buffer`.
 3. Run `/drop`; the bot downloads the queued files and creates one `tar.gz`
    archive in `DOWNLOAD_DIR`.
@@ -87,6 +107,35 @@ Configure queue limits with `MAX_BUFFER_FILES` and `MAX_BUFFER_SIZE`.
 Text files, including completed ones waiting for `/drop`, are kept only in
 memory and are lost after a bot restart; `MAX_TEXT_COLLECTION_SIZE` limits one
 collection to 10 MiB by default.
+
+### Save a web page
+
+Set a prefix once, then send the bot one complete URL in its own message:
+
+```text
+/set_prefix mysite
+https://example.com
+```
+
+The bot uses Chromium to queue one self-contained HTML snapshot with the
+downloaded page resources, styles, and fonts. The rendered DOM is preserved,
+but page scripts are not re-executed offline: modern web apps otherwise try to
+reconnect to their backend and can replace the saved content with placeholders.
+Confirm the queue with `/buffer`, then create the archive:
+
+```text
+/drop
+```
+
+The resulting `mysite_YYYYMMDD_HHMMSS_<id>.tar.gz` archive is written to
+`DOWNLOAD_DIR` — `./downloads/` on the host when using Docker Compose. The bot
+does not send the archive back through Telegram.
+
+For administrators: the sidecar accepts only public `http(s)` URLs; loopback
+and private-network addresses are rejected. In Compose it is reachable only on
+the internal Docker network. `PLAYWRIGHT_PAGE_TIMEOUT_MS` controls Chromium's
+page-load timeout in milliseconds, while `PLAYWRIGHT_TIMEOUT` controls the
+bot's whole request to the sidecar in seconds.
 
 ## Docker image workflow
 
@@ -219,6 +268,10 @@ apt download [--debian 10|11|12|13|10.x.y] [--snapshot YYYYMMDDTHHMMSSZ] [--no-d
 | `MAX_BUFFER_FILES` | `100` | Maximum queued files per user. |
 | `MAX_BUFFER_SIZE` | `10737418240` | Maximum combined queue size per user, in bytes. |
 | `MAX_TEXT_COLLECTION_SIZE` | `10485760` | Maximum in-memory size of one `/text` collection, in bytes. |
+| `SNAPSHOT_DIR` | `./snapshots` | Temporary directory for HTML snapshots in the bot. In Compose: `/snapshots`. |
+| `PLAYWRIGHT_URL` | `http://playwright:3000` | Internal Playwright sidecar URL. |
+| `PLAYWRIGHT_TIMEOUT` | `60` | Total page snapshot timeout, in seconds. |
+| `PLAYWRIGHT_PAGE_TIMEOUT_MS` | `45000` | Chromium page-load timeout in milliseconds; passed to the Compose sidecar. |
 | `MAX_DOCKER_OPERATIONS` | `1` | Maximum concurrent Docker pull/export jobs. |
 | `MAX_PIP_OPERATIONS` | `1` | Maximum concurrent Python package download jobs. |
 | `MAX_APT_OPERATIONS` | `1` | Maximum concurrent Debian package download jobs. |

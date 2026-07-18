@@ -1,5 +1,6 @@
 aiogram==3.29.1
 aiosqlite==0.22.1
+aiohttp==3.13.3
 aiofiles==25.1.0
 docker==7.2.0
 structlog==26.1.0

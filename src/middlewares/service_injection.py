@@ -12,6 +12,7 @@ from src.services.docker_service import DockerService
 from src.services.file_service import FileService
 from src.services.pip_service import PipService
 from src.services.user_service import UserService
+from src.services.web_snapshot_service import WebSnapshotService
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -31,6 +32,7 @@ class ServiceInjectionMiddleware(BaseMiddleware):
         "docker_service",
         "pip_service",
         "user_service",
+        "web_snapshot_service",
     )
 
     def __init__(
@@ -43,6 +45,7 @@ class ServiceInjectionMiddleware(BaseMiddleware):
         docker_service: DockerService | None = None,
         pip_service: PipService | None = None,
         user_service: UserService | None = None,
+        web_snapshot_service: WebSnapshotService | None = None,
     ):
         self.bot = bot
         self.admin_ids = admin_ids or []
@@ -52,6 +55,7 @@ class ServiceInjectionMiddleware(BaseMiddleware):
         self.docker_service = docker_service
         self.pip_service = pip_service
         self.user_service = user_service
+        self.web_snapshot_service = web_snapshot_service
 
     async def __call__(
         self,
@@ -71,6 +75,8 @@ class ServiceInjectionMiddleware(BaseMiddleware):
             data["pip_service"] = self.pip_service
         if self.user_service:
             data["user_service"] = self.user_service
+        if self.web_snapshot_service:
+            data["web_snapshot_service"] = self.web_snapshot_service
 
         # Add bot, admin_ids, and download_dir for handlers that need them
         data["bot"] = self.bot

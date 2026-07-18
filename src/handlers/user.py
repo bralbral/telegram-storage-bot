@@ -17,6 +17,8 @@ async def send_start_help(message: Message, prefix: str) -> None:
         f"👋 Hello! Your prefix: <code>{prefix or 'not set'}</code>\n\n"
         "<b>Files</b>\n"
         "• Send a file to add it to the queue.\n"
+        "• Send one http(s) link to save the complete page as a standalone HTML file.\n"
+        "  Then use <code>/drop</code> to create the archive.\n"
         "• <code>/buffer</code> — view the queue\n"
         "• <code>/drop</code> — create an archive\n"
         "• <code>/clear</code> — empty the queue\n\n"
