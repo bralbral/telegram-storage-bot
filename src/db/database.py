@@ -49,10 +49,17 @@ class Database:
                     filename TEXT NOT NULL,
                     file_size INTEGER,
                     file_type TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'telegram',
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
+            cursor = await db.execute("PRAGMA table_info(buffered_files)")
+            columns = {row[1] for row in await cursor.fetchall()}
+            if "source" not in columns:
+                await db.execute(
+                    "ALTER TABLE buffered_files ADD COLUMN source TEXT NOT NULL DEFAULT 'telegram'"
+                )
             await db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_buffered_files_user "
                 "ON buffered_files (telegram_id, id)"
@@ -106,6 +113,7 @@ class Database:
         filename: str,
         file_size: int | None,
         file_type: str,
+        source: str = "telegram",
     ) -> int:
         """Persist a file queued by a user and return its row id."""
         try:
@@ -113,10 +121,10 @@ class Database:
             cursor = await db.execute(
                 """
                 INSERT INTO buffered_files
-                    (telegram_id, file_id, filename, file_size, file_type)
-                VALUES (?, ?, ?, ?, ?)
+                    (telegram_id, file_id, filename, file_size, file_type, source)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (telegram_id, file_id, filename, file_size, file_type),
+                (telegram_id, file_id, filename, file_size, file_type, source),
             )
             await db.commit()
             return int(cursor.lastrowid)
@@ -126,15 +134,38 @@ class Database:
             )
             raise DatabaseError(f"Failed to add buffered file: {e}") from e
 
+    async def add_buffered_files(
+        self,
+        telegram_id: int,
+        files: list[tuple[str, str, int | None, str, str]],
+    ) -> None:
+        """Persist several queued files in one transaction."""
+        try:
+            db = await self._get_connection()
+            await db.executemany(
+                """
+                INSERT INTO buffered_files
+                    (telegram_id, file_id, filename, file_size, file_type, source)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [(telegram_id, *file) for file in files],
+            )
+            await db.commit()
+        except aiosqlite.Error as e:
+            logger.error(
+                "Failed to add buffered files", telegram_id=telegram_id, error=str(e)
+            )
+            raise DatabaseError(f"Failed to add buffered files: {e}") from e
+
     async def get_buffered_files(
         self, telegram_id: int
-    ) -> list[tuple[int, str, str, int | None, str]]:
+    ) -> list[tuple[int, str, str, int | None, str, str]]:
         """Return queued files in insertion order."""
         try:
             db = await self._get_connection()
             cursor = await db.execute(
                 """
-                SELECT id, file_id, filename, file_size, file_type
+                SELECT id, file_id, filename, file_size, file_type, source
                 FROM buffered_files WHERE telegram_id = ? ORDER BY id
                 """,
                 (telegram_id,),

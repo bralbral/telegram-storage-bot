@@ -137,3 +137,41 @@ async def test_text_collection_is_memory_only_and_has_a_size_limit(
     assert buffer_count == 1
     assert len(await service.get_buffer(100)) == 1
     await database.close()
+
+
+@pytest.mark.asyncio
+async def test_local_snapshot_is_archived_and_removed(tmp_path: Path) -> None:
+    database = Database(tmp_path / "storage.db")
+    await database.init()
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    snapshot = snapshot_dir / "page.html"
+    snapshot.write_text("<h1>Saved page</h1>")
+    service = FileService(
+        CompressionService(), tmp_path, database, 10, 1_000, snapshot_dir=snapshot_dir
+    )
+    await service.add_to_buffer(
+        100,
+        FileInfo(
+            file_id=str(snapshot),
+            filename="page.html",
+            file_size=snapshot.stat().st_size,
+            file_type="web_html",
+            source="local",
+        ),
+    )
+
+    buffer = await service.begin_archive(100)
+    (
+        archive_name,
+        archived_count,
+        failed_count,
+    ) = await service.create_archive_from_buffer(100, "prefix", FakeBot(), buffer)
+
+    assert (archived_count, failed_count) == (1, 0)
+    assert not snapshot.exists()
+    with tarfile.open(tmp_path / archive_name, "r:gz") as archive:
+        extracted = archive.extractfile("page.html")
+        assert extracted is not None
+        assert extracted.read() == b"<h1>Saved page</h1>"
+    await database.close()

@@ -31,6 +31,13 @@ class Config(BaseSettings):
     max_buffer_files: int = Field(default=100, gt=0)
     max_buffer_size: int = Field(default=10 * 1024 * 1024 * 1024, gt=0)
     max_text_collection_size: int = Field(default=10 * 1024 * 1024, gt=0)
+    snapshot_dir: Path = Field(
+        default=Path("./snapshots"), description="Directory shared with Playwright"
+    )
+    playwright_url: str = Field(
+        default="http://playwright:3000", description="Internal Playwright sidecar URL"
+    )
+    playwright_timeout: int = Field(default=60, gt=0, description="Snapshot timeout")
     max_docker_operations: int = Field(default=1, gt=0)
     max_pip_operations: int = Field(default=1, gt=0)
     max_apt_operations: int = Field(default=1, gt=0)

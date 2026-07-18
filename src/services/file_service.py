@@ -42,6 +42,7 @@ class FileService:
         max_buffer_files: int,
         max_buffer_size: int,
         max_text_collection_size: int = 10 * 1024 * 1024,
+        snapshot_dir: Path | None = None,
     ) -> None:
         """Initialize file service.
 
@@ -55,6 +56,7 @@ class FileService:
         self.max_buffer_files = max_buffer_files
         self.max_buffer_size = max_buffer_size
         self.max_text_collection_size = max_text_collection_size
+        self.snapshot_dir = (snapshot_dir or download_dir / "snapshots").resolve()
         self._user_locks: defaultdict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._archiving_users: set[int] = set()
         self._text_collections: dict[int, list[str]] = {}
@@ -76,19 +78,7 @@ class FileService:
         async with self._user_locks[user_id]:
             if user_id in self._archiving_users:
                 raise RuntimeError("Archive creation is already in progress")
-            buffer_count, buffer_size = await self.database.get_buffer_stats(user_id)
-            if buffer_count >= self.max_buffer_files:
-                raise ValueError(f"Buffer limit is {self.max_buffer_files} files")
-            if buffer_size + (file_info.file_size or 0) > self.max_buffer_size:
-                raise ValueError("Buffer size limit would be exceeded")
-            await self.database.add_buffered_file(
-                user_id,
-                file_info.file_id,
-                file_info.filename,
-                file_info.file_size,
-                file_info.file_type,
-            )
-            buffer_count += 1
+            buffer_count = await self._add_files_locked(user_id, [file_info])
         logger.info(
             "File added to buffer",
             user_id=user_id,
@@ -96,6 +86,39 @@ class FileService:
             buffer_count=buffer_count,
         )
         return buffer_count
+
+    async def add_files_to_buffer(
+        self, user_id: int, file_infos: list[FileInfo]
+    ) -> int:
+        """Atomically add several files, enforcing queue limits once."""
+        if not file_infos:
+            raise ValueError("No files to add")
+        async with self._user_locks[user_id]:
+            if user_id in self._archiving_users:
+                raise RuntimeError("Archive creation is already in progress")
+            return await self._add_files_locked(user_id, file_infos)
+
+    async def _add_files_locked(self, user_id: int, file_infos: list[FileInfo]) -> int:
+        buffer_count, buffer_size = await self.database.get_buffer_stats(user_id)
+        file_size = sum(item.file_size or 0 for item in file_infos)
+        if buffer_count + len(file_infos) > self.max_buffer_files:
+            raise ValueError(f"Buffer limit is {self.max_buffer_files} files")
+        if buffer_size + file_size > self.max_buffer_size:
+            raise ValueError("Buffer size limit would be exceeded")
+        await self.database.add_buffered_files(
+            user_id,
+            [
+                (
+                    file_info.file_id,
+                    file_info.filename,
+                    file_info.file_size,
+                    file_info.file_type,
+                    file_info.source,
+                )
+                for file_info in file_infos
+            ],
+        )
+        return buffer_count + len(file_infos)
 
     async def get_buffer(self, user_id: int) -> list[BufferedFile]:
         """Get user's buffer contents.
@@ -115,9 +138,10 @@ class FileService:
                     filename=filename,
                     file_size=file_size,
                     file_type=file_type,
+                    source=source,
                 ),
             )
-            for row_id, file_id, filename, file_size, file_type in rows
+            for row_id, file_id, filename, file_size, file_type, source in rows
         ]
         buffered_files.extend(
             BufferedFile(id=None, file_info=file_info)
@@ -230,10 +254,31 @@ class FileService:
         async with self._user_locks[user_id]:
             if user_id in self._archiving_users:
                 raise RuntimeError("Archive creation is already in progress")
+            buffered_files = await self.get_buffer(user_id)
             count = await self.database.clear_buffered_files(user_id)
             text_count = len(self._text_files.pop(user_id, []))
+            self._remove_local_files(buffered_files)
         logger.info("Buffer cleared", user_id=user_id, removed=count + text_count)
         return count + text_count
+
+    def _local_path(self, file_info: FileInfo) -> Path:
+        path = Path(file_info.file_id).resolve()
+        if not path.is_relative_to(self.snapshot_dir):
+            raise ValueError("Local file is outside the snapshot directory")
+        return path
+
+    def _remove_local_files(self, buffered_files: list[BufferedFile]) -> None:
+        self.remove_local_files([item.file_info for item in buffered_files])
+
+    def remove_local_files(self, file_infos: list[FileInfo]) -> None:
+        """Delete local snapshots that were not kept in the queue."""
+        for file_info in file_infos:
+            if file_info.source != "local":
+                continue
+            try:
+                self._local_path(file_info).unlink(missing_ok=True)
+            except (OSError, ValueError) as error:
+                logger.warning("Failed to remove local snapshot", error=str(error))
 
     @staticmethod
     def get_buffer_size(buffer: list[BufferedFile]) -> int:
@@ -282,6 +327,7 @@ class FileService:
         temporary_archive_path = archive_path.with_suffix(archive_path.suffix + ".part")
         successful_ids: list[int] = []
         successful_text_file_ids: list[str] = []
+        successful_local_files: list[BufferedFile] = []
         successful_count = 0
         failed_count = 0
 
@@ -303,6 +349,12 @@ class FileService:
                             ) as temp_file:
                                 temp_file.write(content)
                                 temp_path = Path(temp_file.name)
+                        elif file_info.source == "local":
+                            temp_path = self._local_path(file_info)
+                            if not temp_path.is_file():
+                                raise RuntimeError(
+                                    "Local snapshot file no longer exists"
+                                )
                         else:
                             tg_file = await bot.get_file(file_info.file_id)
                             with tempfile.NamedTemporaryFile(delete=False) as temp_file:
@@ -321,6 +373,8 @@ class FileService:
                             successful_ids.append(buffered_file.id)
                         if file_info.file_type == "text":
                             successful_text_file_ids.append(file_info.file_id)
+                        if file_info.source == "local":
+                            successful_local_files.append(buffered_file)
 
                     except Exception as e:
                         failed_count += 1
@@ -330,7 +384,7 @@ class FileService:
                             error=str(e),
                         )
                     finally:
-                        if temp_path is not None:
+                        if temp_path is not None and file_info.source != "local":
                             temp_path.unlink(missing_ok=True)
 
             if not successful_count:
@@ -338,6 +392,7 @@ class FileService:
 
             os.replace(temporary_archive_path, archive_path)
             await self.database.delete_buffered_files(user_id, successful_ids)
+            self._remove_local_files(successful_local_files)
             if successful_text_file_ids:
                 successful_text_ids = set(successful_text_file_ids)
                 self._text_files[user_id] = [

@@ -1,4 +1,28 @@
 services:
+  playwright:
+    build: ./playwright
+    restart: unless-stopped
+    init: true
+    expose:
+      - "3000"
+    environment:
+      - PAGE_TIMEOUT_MS=${PLAYWRIGHT_PAGE_TIMEOUT_MS:-45000}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - KILL
+      - SETGID
+      - SETUID
+    shm_size: 1gb
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
   telegram-bot-api:
     image: ghcr.io/lukaszraczylo/tdlib-telegram-bot-api-docker/telegram-api-server:1.0.312
     container_name: telegram-bot-api
@@ -44,14 +68,20 @@ services:
       - MAX_BUFFER_SIZE=${MAX_BUFFER_SIZE:-10737418240}
       - MAX_TEXT_COLLECTION_SIZE=${MAX_TEXT_COLLECTION_SIZE:-10485760}
       - MAX_DOCKER_OPERATIONS=${MAX_DOCKER_OPERATIONS:-1}
+      - SNAPSHOT_DIR=${SNAPSHOT_DIR:-/snapshots}
+      - PLAYWRIGHT_URL=${PLAYWRIGHT_URL:-http://playwright:3000}
+      - PLAYWRIGHT_TIMEOUT=${PLAYWRIGHT_TIMEOUT:-60}
     ports:
       - "${HEALTH_PORT:-8080}:${HEALTH_PORT:-8080}"
     volumes:
       - ./telegram-local-api:/telegram-local-api:ro
       - ./downloads:/downloads
       - ./data:/app/data
+      - ./snapshots:/snapshots
     depends_on:
       telegram-bot-api:
+        condition: service_healthy
+      playwright:
         condition: service_healthy
     env_file:
       - .env

@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "mhtml-to-html": "2.0.1",
+    "playwright-core": "1.61.0"
+  }
+}

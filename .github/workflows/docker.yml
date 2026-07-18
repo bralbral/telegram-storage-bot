@@ -1,4 +1,4 @@
-name: Build and Push Docker Image
+name: Build and Push Docker Images
 
 on:
   push:
@@ -28,7 +28,7 @@ jobs:
         id: timestamp
         run: echo "timestamp=$(date +'%Y-%m-%d-%H-%M-%S')" >> $GITHUB_OUTPUT
 
-      - name: Build and push Docker image
+      - name: Build and push bot image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -39,5 +39,20 @@ jobs:
           labels: |
             org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
             org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=storage-bot
+          cache-to: type=gha,mode=max,scope=storage-bot
+
+      - name: Build and push Playwright image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./playwright
+          file: ./playwright/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}-playwright:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}-playwright:${{ steps.timestamp.outputs.timestamp }}
+          labels: |
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=playwright
+          cache-to: type=gha,mode=max,scope=playwright
