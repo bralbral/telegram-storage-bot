@@ -105,26 +105,25 @@ class AptService:
             f"{target.repository} {target.suite} main contrib non-free"
         )
         apt_options = (
-            "-o Dir::State::status=/output/apt-state/status "
-            "-o Dir::State::lists=/output/apt-state/lists "
-            "-o Dir::Cache::archives=/output"
+            "-o Dir::State::status=/tmp/apt-state/status "
+            "-o Dir::State::lists=/tmp/apt-state/lists "
+            "-o Dir::Cache::archives=/tmp/apt-packages"
         )
         download_command = (
             "apt-get -y --download-only --no-install-recommends"
             f" {apt_options} install {packages}"
             if request.include_dependencies
-            else f"cd /output && apt-get {apt_options} download {packages}"
+            else f"cd /tmp/apt-packages && apt-get {apt_options} download {packages}"
         )
         script = (
             "set -eu\n"
-            "cleanup() { rm -rf /output/partial /output/lock /output/apt-state; }\n"
-            "trap cleanup EXIT\n"
             f"printf '%s\\n' {shlex.quote(source)} > /etc/apt/sources.list\n"
             "rm -f /etc/apt/sources.list.d/*\n"
-            "mkdir -p /output/partial /output/apt-state/lists/partial\n"
-            ": > /output/apt-state/status\n"
+            "mkdir -p /tmp/apt-packages/partial /tmp/apt-state/lists/partial\n"
+            ": > /tmp/apt-state/status\n"
             f"apt-get {apt_options} -o Acquire::Check-Valid-Until=false update\n"
             f"{download_command}\n"
+            "cp /tmp/apt-packages/*.deb /output/\n"
         )
         return ["/bin/sh", "-ec", script]
 

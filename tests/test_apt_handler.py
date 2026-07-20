@@ -38,6 +38,18 @@ def test_known_point_release_uses_its_catalog_snapshot() -> None:
     assert "20190707T000000Z" in target.repository
 
 
+def test_apt_command_keeps_mutable_apt_state_off_output_mount() -> None:
+    request = parse_apt_download("apt download --debian 10.0.0 curl", "")
+
+    command = AptService._command(request, AptService._target(request))
+    script = command[-1]
+
+    assert "Dir::State::lists=/tmp/apt-state/lists" in script
+    assert "Dir::Cache::archives=/tmp/apt-packages" in script
+    assert "cp /tmp/apt-packages/*.deb /output/" in script
+    assert "/output/apt-state" not in script
+
+
 @pytest.mark.parametrize(
     "text",
     [
