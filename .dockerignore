@@ -19,3 +19,4 @@ config.yaml
 .env.example
 .mypy_cache
 .ruff_cache
+.idea/
