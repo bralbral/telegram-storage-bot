@@ -305,3 +305,11 @@ Application logs include `user_id`, `chat_id`, and `message_id` for every
 Telegram update, as well as an `action` such as `/drop`, `file_upload`, or
 `docker_pull`. The same context is retained by background archive and Docker
 tasks.
+
+## Hosting
+
+You can rent a server from various hosters, for example from [Aeza](https://aeza.net/?ref=380831).
+
+>*By registering via the [link](https://aeza.net/?ref=380831) you will support the project and receive a 15% bonus on your balance, which will be valid for 24 hours.*
+
+The bot will require the simplest VDS, in rubles this is approximately 100-200 for promotional offers, or about 500 rubles per month.
