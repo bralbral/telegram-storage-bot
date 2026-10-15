@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import os
+import stat
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -40,6 +42,55 @@ class DockerService:
         self._running_tasks: set[asyncio.Task] = set()
         self._image_locks: dict[str, asyncio.Lock] = {}
         self._operation_semaphore = asyncio.Semaphore(max_concurrent_operations)
+
+    def _download_dir_diagnostics(self) -> dict[str, Any]:
+        """Return best-effort facts about the filesystem used for exports.
+
+        This deliberately performs only metadata operations: an image export must
+        not create an extra probe file just to report an already failing disk or
+        network mount.
+        """
+        diagnostics: dict[str, Any] = {"download_dir": str(self.download_dir)}
+        try:
+            directory_stat = self.download_dir.stat()
+            diagnostics.update(
+                download_dir_exists=True,
+                download_dir_is_directory=stat.S_ISDIR(directory_stat.st_mode),
+                download_dir_mode=oct(stat.S_IMODE(directory_stat.st_mode)),
+                download_dir_device=directory_stat.st_dev,
+                download_dir_writable=os.access(self.download_dir, os.W_OK),
+            )
+        except OSError as error:
+            diagnostics.update(
+                download_dir_exists=False,
+                download_dir_inspect_error=str(error),
+                download_dir_inspect_errno=error.errno,
+                download_dir_inspect_errno_name=(
+                    errno.errorcode.get(error.errno)
+                    if error.errno is not None
+                    else None
+                ),
+            )
+            return diagnostics
+
+        try:
+            filesystem = os.statvfs(self.download_dir)
+            diagnostics.update(
+                download_dir_free_bytes=filesystem.f_bavail * filesystem.f_frsize,
+                download_dir_free_inodes=filesystem.f_favail,
+            )
+        except OSError as error:
+            diagnostics.update(
+                download_dir_statvfs_error=str(error),
+                download_dir_statvfs_errno=error.errno,
+                download_dir_statvfs_errno_name=(
+                    errno.errorcode.get(error.errno)
+                    if error.errno is not None
+                    else None
+                ),
+            )
+
+        return diagnostics
 
     async def _run_tracked_task(self, sync_func, *args) -> Any:
         """Run a synchronous function in a tracked task.
@@ -99,8 +150,19 @@ class DockerService:
         client = docker.DockerClient(
             base_url=self.docker_host, timeout=self.download_timeout
         )
+        stage = "checking download directory"
         try:
+            logger.info(
+                "Checking image download directory",
+                image=image_name,
+                **self._download_dir_diagnostics(),
+            )
             self.download_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(
+                "Image download directory is ready",
+                image=image_name,
+                **self._download_dir_diagnostics(),
+            )
 
             safe_image_name = image_name.replace("/", "_").replace(":", "_")
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -109,19 +171,37 @@ class DockerService:
             temporary_path = gz_filepath.with_suffix(gz_filepath.suffix + ".part")
 
             # Stream the Docker tar straight into gzip: no full temporary tar on disk.
+            stage = "opening temporary archive"
             logger.info("Saving and compressing Docker image", filename=gz_filename)
             image = client.images.get(image_name)
             try:
                 with open_gzip_without_filename(temporary_path) as gzip_file:
+                    stage = "writing image archive"
                     for chunk in image.save(named=True):
                         gzip_file.write(chunk)
+                stage = "finalizing image archive"
                 os.replace(temporary_path, gz_filepath)
             finally:
                 temporary_path.unlink(missing_ok=True)
 
             return gz_filename
         except Exception as e:
-            logger.error("Error saving Docker image", image=image_name, error=str(e))
+            error_errno = e.errno if isinstance(e, OSError) else None
+            logger.error(
+                "Error saving Docker image",
+                image=image_name,
+                stage=stage,
+                error=str(e),
+                error_type=type(e).__name__,
+                error_errno=error_errno,
+                error_errno_name=(
+                    errno.errorcode.get(error_errno)
+                    if error_errno is not None
+                    else None
+                ),
+                **self._download_dir_diagnostics(),
+                exc_info=True,
+            )
             raise
         finally:
             client.close()
